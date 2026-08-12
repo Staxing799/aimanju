@@ -361,6 +361,22 @@
   }
 }
 
+.loginSpinner {
+  width: clamp(18px, 1.05vw, 30px);
+  height: clamp(18px, 1.05vw, 30px);
+  border: clamp(2px, 0.12vw, 3px) solid rgba(238, 232, 248, 0.3);
+  border-top-color: rgb(238, 232, 248);
+  border-right-color: rgba(238, 232, 248, 0.72);
+  border-radius: 50%;
+  animation: loginSpinnerRotate 720ms linear infinite;
+}
+
+@keyframes loginSpinnerRotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-aspect-ratio: 4 / 3) {
   .page {
     background-position: 58% center;
@@ -442,5 +458,9 @@
   .loginButton,
   .loginButton::before {
     transition: none;
+  }
+
+  .loginSpinner {
+    animation-duration: 1.4s !important;
   }
 }

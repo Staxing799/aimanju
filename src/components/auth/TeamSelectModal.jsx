@@ -17,9 +17,17 @@ function TeamSelectModal({
 
   return (
     <div className={styles.mask} role="presentation">
-      <div className={styles.card}>
-        <h2 className={styles.title}>选择团队</h2>
-        <p className={styles.subtitle}>请选择当前登录账号需要进入的协作团队。</p>
+      <section
+        className={styles.card}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="team-select-title"
+        aria-describedby="team-select-description"
+      >
+        <h2 className={styles.title} id="team-select-title">选择团队</h2>
+        <p className={styles.subtitle} id="team-select-description">
+          请选择当前登录账号需要进入的协作团队
+        </p>
 
         <div className={styles.teamList}>
           {teams.map((team) => (
@@ -28,6 +36,7 @@ function TeamSelectModal({
               className={`${styles.teamItem} ${selectedTeamId === team.id ? styles.selected : ''}`}
               onClick={() => onSelectTeam(team.id)}
               type="button"
+              aria-pressed={selectedTeamId === team.id}
             >
               <span className={styles.teamName}>{team.name}</span>
               <small>{team.memberCount ? `${team.memberCount} 人协作中` : '团队协作空间'}</small>
@@ -36,7 +45,12 @@ function TeamSelectModal({
         </div>
 
         <div className={styles.actions}>
-          <button type="button" onClick={onClose} disabled={confirmLoading}>
+          <button
+            className={styles.cancelButton}
+            type="button"
+            onClick={onClose}
+            disabled={confirmLoading}
+          >
             取消
           </button>
           <button
@@ -48,7 +62,7 @@ function TeamSelectModal({
             {confirmLoading ? '进入中...' : '确认进入'}
           </button>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

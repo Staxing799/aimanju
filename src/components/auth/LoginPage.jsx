@@ -126,8 +126,17 @@ function LoginPage({ onLogin, loading = false }) {
                 />
               </label>
 
-              <button className={styles.loginButton} type="submit" disabled={loading}>
-                <span>{loading ? '登录中…' : '登录'}</span>
+              <button
+                className={styles.loginButton}
+                type="submit"
+                disabled={loading}
+                aria-label={loading ? '正在登录' : '登录'}
+              >
+                {loading ? (
+                  <span className={styles.loginSpinner} aria-hidden="true" />
+                ) : (
+                  <span>登录</span>
+                )}
               </button>
             </div>
 

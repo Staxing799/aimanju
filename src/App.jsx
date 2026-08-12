@@ -418,6 +418,12 @@ function App() {
       return;
     }
 
+    if (location.pathname === '/login') {
+      const messageType = title.includes('失败') ? 'error' : 'warning';
+      showMessage(content, messageType);
+      return;
+    }
+
     openConfirmDialog({
       title,
       content,
@@ -644,7 +650,6 @@ function App() {
 
       const teams = normalizeTeamList(loginResponse.teams);
       const defaultTeamId = normalizeTeamId(loginResponse.current_team_id) || teams[0]?.id || null;
-      const accountType = String(loginResponse?.user?.account_type || '').trim().toLowerCase();
       const accountName = String(loginResponse?.user?.username || safeAccount);
       const accessToken = String(loginResponse.access_token || '');
       const refreshToken = String(loginResponse.refresh_token || '');
@@ -653,27 +658,15 @@ function App() {
         throw new Error('登录失败：当前账号未加入任何团队');
       }
 
-      if (accountType !== 'main') {
-        persistLoginSession({
-          account: accountName,
-          accessToken,
-          refreshToken,
-          teamId: defaultTeamId,
-          teams,
-        });
-        return;
-      }
-
-      setPendingLogin({
+      // Team selection is temporarily bypassed. Main and sub accounts both
+      // enter the backend-selected team immediately after authentication.
+      persistLoginSession({
         account: accountName,
         accessToken,
         refreshToken,
-        currentTeamId: defaultTeamId,
+        teamId: defaultTeamId,
         teams,
       });
-      setTeamOptions(teams);
-      setSelectedTeamId(defaultTeamId);
-      setTeamModalOpen(true);
     } catch (error) {
       showNoticeDialog(parseApiErrorMessage(error, '登录失败，请检查账号或密码'), '登录失败');
     } finally {
