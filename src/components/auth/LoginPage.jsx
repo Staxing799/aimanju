@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import brandMark from '../../assets/login/hero-mark.png';
 import brandTagline from '../../assets/login/born-for-passion.png';
 import styles from './LoginPage.module.less';
@@ -7,6 +7,41 @@ import styles from './LoginPage.module.less';
 function LoginPage({ onLogin, loading = false }) {
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
+  const accountInputRef = useRef(null);
+  const passwordInputRef = useRef(null);
+  const credentialInteractionStartedRef = useRef(false);
+
+  useEffect(() => {
+    const clearRestoredCredentials = () => {
+      if (credentialInteractionStartedRef.current) {
+        return;
+      }
+
+      setAccount('');
+      setPassword('');
+
+      // Some browsers restore credentials directly into the DOM after React mounts.
+      if (accountInputRef.current) {
+        accountInputRef.current.value = '';
+      }
+      if (passwordInputRef.current) {
+        passwordInputRef.current.value = '';
+      }
+    };
+
+    const clearDelays = [0, 60, 180, 420, 900, 1500, 2400];
+    const timers = clearDelays.map((delay) => window.setTimeout(clearRestoredCredentials, delay));
+    window.addEventListener('pageshow', clearRestoredCredentials);
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.removeEventListener('pageshow', clearRestoredCredentials);
+    };
+  }, []);
+
+  function allowCredentialSelection() {
+    credentialInteractionStartedRef.current = true;
+  }
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -21,9 +56,8 @@ function LoginPage({ onLogin, loading = false }) {
         <form
           className={styles.loginForm}
           onSubmit={handleSubmit}
-          autoComplete="off"
+          autoComplete="on"
           aria-busy={loading}
-          data-form-type="other"
         >
           <div className={styles.brandLockup}>
             <img className={styles.brandMark} src={brandMark} alt="品牌标志" />
@@ -39,39 +73,47 @@ function LoginPage({ onLogin, loading = false }) {
               用户名
               <span className={styles.inputShell}>
                 <input
+                  ref={accountInputRef}
                   id="login-account"
+                  name="username"
                   type="text"
                   value={account}
                   onChange={(event) => setAccount(event.target.value)}
                   placeholder="用户名"
-                  autoComplete="off"
-                  data-1p-ignore="true"
-                  data-bwignore="true"
-                  data-lpignore="true"
+                  autoComplete="username"
+                  onPointerDown={allowCredentialSelection}
+                  onKeyDown={allowCredentialSelection}
+                  onFocus={allowCredentialSelection}
                   disabled={loading}
                   required
                 />
               </span>
             </label>
 
-            <label className={styles.fieldLabel} htmlFor="login-password">
-              密码
-              <span className={styles.inputShell}>
+            <div className={`${styles.inputShell} ${styles.passwordShell}`}>
+              <label className={`${styles.fieldLabel} ${styles.passwordField}`} htmlFor="login-password">
+                密码
                 <input
+                  ref={passwordInputRef}
                   id="login-password"
+                  name="password"
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="密码"
-                  autoComplete="off"
-                  data-1p-ignore="true"
-                  data-bwignore="true"
-                  data-lpignore="true"
+                  autoComplete="current-password"
+                  onPointerDown={allowCredentialSelection}
+                  onKeyDown={allowCredentialSelection}
+                  onFocus={allowCredentialSelection}
                   disabled={loading}
                   required
                 />
-              </span>
-            </label>
+              </label>
+
+              <button className={styles.loginButton} type="submit" disabled={loading}>
+                <span>{loading ? '登录中…' : '登录'}</span>
+              </button>
+            </div>
 
             <div className={styles.accountActions} aria-label="账号帮助">
               <button className={styles.accountAction} type="button">
@@ -82,9 +124,6 @@ function LoginPage({ onLogin, loading = false }) {
               </button>
             </div>
 
-            <button className={styles.loginButton} type="submit" disabled={loading}>
-              <span>{loading ? '登录中…' : '登录'}</span>
-            </button>
           </div>
         </form>
       </section>

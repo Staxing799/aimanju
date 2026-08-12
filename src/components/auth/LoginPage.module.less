@@ -2,6 +2,11 @@
   --neon-pink: #f61b9a;
   --neon-violet: #9e2edb;
   --neon-blue: #2455ff;
+  // 70% transparent: keep only a 30% dark tint over the blurred background.
+  --input-surface: rgba(8, 8, 34, 0.3);
+  --input-glass-filter: blur(clamp(16px, 1.15vw, 28px)) saturate(1.24);
+  --input-text: #f7f7ff;
+  --input-placeholder: rgba(222, 223, 244, 0.65);
   --control-border: clamp(2px, 0.12vw, 4px);
   --control-height: clamp(54px, 5.55vh, 104px);
   --input-font-size: clamp(15px, 0.88vw, 28px);
@@ -66,7 +71,7 @@
 }
 
 .fields {
-  width: clamp(350px, 28.5vw, 1100px);
+  width: clamp(280px, 14.25vw, 550px);
   margin-top: clamp(28px, 3.1vh, 68px);
   display: grid;
   gap: clamp(12px, 1.35vh, 28px);
@@ -74,6 +79,7 @@
 
 .fieldLabel {
   display: block;
+  min-width: 0;
   font-size: 0;
   color: transparent;
 }
@@ -86,20 +92,40 @@
   display: block;
   overflow: hidden;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--neon-pink), var(--neon-violet) 48%, var(--neon-blue));
+  background: transparent;
   box-shadow:
     -4px 0 20px rgba(246, 27, 154, 0.34),
     5px 0 22px rgba(36, 85, 255, 0.34),
     inset 0 0 12px rgba(255, 255, 255, 0.13);
   transition: box-shadow 180ms ease;
 
+  &::before {
+    content: '';
+    position: absolute;
+    z-index: 0;
+    inset: var(--control-border);
+    border-radius: inherit;
+    background: var(--input-surface);
+    -webkit-backdrop-filter: var(--input-glass-filter);
+    backdrop-filter: var(--input-glass-filter);
+    pointer-events: none;
+    box-shadow: inset 0 0 18px rgba(52, 47, 186, 0.16);
+  }
+
   &::after {
     content: '';
     position: absolute;
-    inset: var(--control-border);
+    z-index: 3;
+    inset: 0;
+    padding: var(--control-border);
     border-radius: inherit;
+    background: linear-gradient(90deg, var(--neon-pink), var(--neon-violet) 48%, var(--neon-blue));
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
     pointer-events: none;
-    box-shadow: inset 0 0 18px rgba(52, 47, 186, 0.16);
   }
 
   &:focus-within {
@@ -108,6 +134,15 @@
       6px 0 30px rgba(36, 85, 255, 0.55),
       0 0 0 clamp(2px, 0.1vw, 4px) rgba(255, 255, 255, 0.14);
   }
+}
+
+.passwordShell {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(82px, 1fr);
+}
+
+.passwordField {
+  height: 100%;
 }
 
 .inputShell input {
@@ -123,8 +158,8 @@
   outline: 0;
   appearance: none;
   -webkit-appearance: none;
-  color: #f7f7ff;
-  background: rgba(5, 5, 30, 0.87);
+  color: var(--input-text);
+  background: transparent;
   box-shadow: none;
   font-family: 'Aptos', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
   font-size: var(--input-font-size) !important;
@@ -134,8 +169,21 @@
   vertical-align: middle;
   caret-color: #fff;
 
+  &,
+  &:hover,
+  &:focus,
+  &:active,
+  &:valid,
+  &:invalid,
+  &:disabled {
+    color: var(--input-text);
+    background: transparent;
+    box-shadow: none;
+    opacity: 1;
+  }
+
   &::placeholder {
-    color: rgba(222, 223, 244, 0.65);
+    color: var(--input-placeholder);
     opacity: 1;
   }
 
@@ -149,6 +197,23 @@
     cursor: not-allowed;
   }
 
+  &:-webkit-autofill,
+  &:-webkit-autofill:hover,
+  &:-webkit-autofill:focus,
+  &:-webkit-autofill:active {
+    -webkit-text-fill-color: var(--input-text) !important;
+    caret-color: #fff;
+    background: transparent !important;
+    background-clip: text !important;
+    -webkit-background-clip: text !important;
+    box-shadow: none !important;
+    transition: background-color 9999s ease-out 0s, color 9999s ease-out 0s;
+  }
+
+}
+
+.inputShell.passwordShell input {
+  border-radius: 999px 0 0 999px;
 }
 
 .accountActions {
@@ -215,13 +280,13 @@
 .loginButton {
   position: relative;
   width: 100%;
-  height: var(--control-height);
+  height: 100%;
   min-height: 0;
   margin: 0;
-  padding: var(--control-border);
+  padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0 999px 999px 0;
   color: #fff;
   background: linear-gradient(90deg, #e71690 0%, #b321c3 48%, #2e56fb 100%);
   box-shadow:
@@ -284,6 +349,15 @@
   }
 }
 
+.passwordShell .loginButton {
+  z-index: 1;
+
+  &:hover:not(:disabled),
+  &:active:not(:disabled) {
+    transform: none;
+  }
+}
+
 @media (max-aspect-ratio: 4 / 3) {
   .page {
     background-position: 58% center;
@@ -298,7 +372,7 @@
   }
 
   .fields {
-    width: min(78vw, 580px);
+    width: min(54vw, 400px);
   }
 }
 
@@ -348,7 +422,7 @@
   }
 
   .fields {
-    width: 350px;
+    width: 280px;
     margin-top: 20px;
     gap: 10px;
   }
