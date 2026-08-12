@@ -7,40 +7,53 @@ import styles from './LoginPage.module.less';
 function LoginPage({ onLogin, loading = false }) {
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
+  const [credentialsUnlocked, setCredentialsUnlocked] = useState(false);
   const accountInputRef = useRef(null);
   const passwordInputRef = useRef(null);
-  const credentialInteractionStartedRef = useRef(false);
 
   useEffect(() => {
-    const clearRestoredCredentials = () => {
-      if (credentialInteractionStartedRef.current) {
-        return;
-      }
-
+    const lockAndClearCredentials = () => {
       setAccount('');
       setPassword('');
+      setCredentialsUnlocked(false);
 
-      // Some browsers restore credentials directly into the DOM after React mounts.
+      // Reset the DOM synchronously before a page is cached/restored. The inputs
+      // remain read-only until the next deliberate user interaction, so the
+      // browser cannot paint restored credentials before React clears them.
       if (accountInputRef.current) {
         accountInputRef.current.value = '';
+        accountInputRef.current.readOnly = true;
       }
       if (passwordInputRef.current) {
         passwordInputRef.current.value = '';
+        passwordInputRef.current.readOnly = true;
       }
     };
 
-    const clearDelays = [0, 60, 180, 420, 900, 1500, 2400];
-    const timers = clearDelays.map((delay) => window.setTimeout(clearRestoredCredentials, delay));
-    window.addEventListener('pageshow', clearRestoredCredentials);
+    window.addEventListener('pagehide', lockAndClearCredentials);
+    window.addEventListener('pageshow', lockAndClearCredentials);
 
     return () => {
-      timers.forEach((timer) => window.clearTimeout(timer));
-      window.removeEventListener('pageshow', clearRestoredCredentials);
+      window.removeEventListener('pagehide', lockAndClearCredentials);
+      window.removeEventListener('pageshow', lockAndClearCredentials);
     };
   }, []);
 
-  function allowCredentialSelection() {
-    credentialInteractionStartedRef.current = true;
+  function unlockCredentials() {
+    if (credentialsUnlocked) {
+      return;
+    }
+
+    // Pointer-down and key-down run before the browser performs its default
+    // focus/input action. Removing readOnly synchronously keeps the initial
+    // paint empty while still allowing the native saved-account picker.
+    if (accountInputRef.current) {
+      accountInputRef.current.readOnly = false;
+    }
+    if (passwordInputRef.current) {
+      passwordInputRef.current.readOnly = false;
+    }
+    setCredentialsUnlocked(true);
   }
 
   function handleSubmit(event) {
@@ -81,9 +94,10 @@ function LoginPage({ onLogin, loading = false }) {
                   onChange={(event) => setAccount(event.target.value)}
                   placeholder="用户名"
                   autoComplete="username"
-                  onPointerDown={allowCredentialSelection}
-                  onKeyDown={allowCredentialSelection}
-                  onFocus={allowCredentialSelection}
+                  readOnly={!credentialsUnlocked}
+                  onPointerDownCapture={unlockCredentials}
+                  onKeyDownCapture={unlockCredentials}
+                  onFocus={unlockCredentials}
                   disabled={loading}
                   required
                 />
@@ -102,9 +116,10 @@ function LoginPage({ onLogin, loading = false }) {
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="密码"
                   autoComplete="current-password"
-                  onPointerDown={allowCredentialSelection}
-                  onKeyDown={allowCredentialSelection}
-                  onFocus={allowCredentialSelection}
+                  readOnly={!credentialsUnlocked}
+                  onPointerDownCapture={unlockCredentials}
+                  onKeyDownCapture={unlockCredentials}
+                  onFocus={unlockCredentials}
                   disabled={loading}
                   required
                 />
