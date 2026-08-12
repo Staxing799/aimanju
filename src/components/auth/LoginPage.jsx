@@ -1,93 +1,94 @@
 import { useState } from 'react';
-import aiveoLogo from '../../assets/aiveo-logo.png';
-import workflowVisual from '../../assets/home-ai-short-drama-workflow.png';
+import brandMark from '../../assets/login/hero-mark.png';
+import brandTagline from '../../assets/login/born-for-passion.png';
 import styles from './LoginPage.module.less';
 
-// 登录页：收集账号密码并交给上层处理鉴权逻辑。
+// 登录页只负责收集凭据，实际鉴权仍交由应用层处理。
 function LoginPage({ onLogin, loading = false }) {
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
 
-  // 阻止默认提交，统一走回调以便上层控制流程。
   function handleSubmit(event) {
     event.preventDefault();
     onLogin({ account, password });
   }
 
   return (
-    <div className={styles.page}>
-      <div className={styles.ambient} aria-hidden />
+    <main className={styles.page}>
+      <div className={styles.vignette} aria-hidden="true" />
 
-      <section className={styles.showcase} aria-label="AiVeo 创作平台介绍">
-        <div className={styles.showcaseTop}>
-          <img className={styles.showcaseLogo} src={aiveoLogo} alt="" />
-          <span className={styles.productTag}>AI DRAMA PRODUCTION SUITE</span>
-        </div>
-
-        <div className={styles.showcaseCopy}>
-          <span className={styles.eyebrow}>FROM IDEA TO SCREEN</span>
-          <h2>把灵感，变成<br />可交付的故事。</h2>
-          <p>一个面向短剧团队的智能制作空间，从剧本解析到分镜成片，让创作链路更清晰。</p>
-        </div>
-
-        <div className={styles.visualFrame}>
-          <img src={workflowVisual} alt="" />
-          <div className={styles.visualOverlay} aria-hidden />
-          <div className={styles.visualMeta}>
-            <span>01 剧本</span>
-            <span>02 设定</span>
-            <span>03 分镜</span>
-            <span>04 成片</span>
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.authPanel}>
-        <form className={styles.card} onSubmit={handleSubmit}>
-          <div className={styles.mobileBrand}>
-            <img className={styles.logo} src={aiveoLogo} alt="AiVeo" />
-          </div>
-          <div className={styles.formHeader}>
-            <span>WELCOME BACK</span>
-            <h1 className={styles.title}>AI剧创作一体化平台</h1>
-            <p className={styles.subtitle}>主账号登录后选择团队，子账号登录后直接进入项目工作台。</p>
-          </div>
-
-          <label>
-            账号
-            <input
-              type="text"
-              value={account}
-              onChange={(event) => setAccount(event.target.value)}
-              placeholder="请输入账号"
-              autoComplete="username"
-              disabled={loading}
-              required
+      <section className={styles.loginStage} aria-label="账号登录">
+        <form
+          className={styles.loginForm}
+          onSubmit={handleSubmit}
+          autoComplete="off"
+          aria-busy={loading}
+          data-form-type="other"
+        >
+          <div className={styles.brandLockup}>
+            <img className={styles.brandMark} src={brandMark} alt="品牌标志" />
+            <img
+              className={styles.brandTagline}
+              src={brandTagline}
+              alt="Born for Passion"
             />
-          </label>
+          </div>
 
-          <label>
-            密码
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="请输入密码"
-              autoComplete="current-password"
-              disabled={loading}
-              required
-            />
-          </label>
+          <div className={styles.fields}>
+            <label className={styles.fieldLabel} htmlFor="login-account">
+              用户名
+              <span className={styles.inputShell}>
+                <input
+                  id="login-account"
+                  type="text"
+                  value={account}
+                  onChange={(event) => setAccount(event.target.value)}
+                  placeholder="用户名"
+                  autoComplete="off"
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  data-lpignore="true"
+                  disabled={loading}
+                  required
+                />
+              </span>
+            </label>
 
-          <button className={styles.primaryButton} type="submit" disabled={loading}>
-            <span>{loading ? '登录中...' : '登录'}</span>
-            {!loading && <span aria-hidden>进入工作台 →</span>}
-          </button>
+            <label className={styles.fieldLabel} htmlFor="login-password">
+              密码
+              <span className={styles.inputShell}>
+                <input
+                  id="login-password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="密码"
+                  autoComplete="off"
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  data-lpignore="true"
+                  disabled={loading}
+                  required
+                />
+              </span>
+            </label>
 
-          <p className={styles.securityNote}><span aria-hidden>●</span> 安全连接 · 团队数据独立存储</p>
+            <div className={styles.accountActions} aria-label="账号帮助">
+              <button className={styles.accountAction} type="button">
+                注册账号
+              </button>
+              <button className={styles.accountAction} type="button">
+                忘记密码？
+              </button>
+            </div>
+
+            <button className={styles.loginButton} type="submit" disabled={loading}>
+              <span>{loading ? '登录中…' : '登录'}</span>
+            </button>
+          </div>
         </form>
       </section>
-    </div>
+    </main>
   );
 }
 
