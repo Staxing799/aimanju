@@ -70,6 +70,7 @@ function LoginPage({ onLogin, loading = false }) {
           className={styles.loginForm}
           onSubmit={handleSubmit}
           autoComplete="on"
+          noValidate
           aria-busy={loading}
         >
           <div className={styles.brandLockup}>

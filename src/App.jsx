@@ -27,7 +27,7 @@ const DEFAULT_ACCOUNT = 'demo@studio.ai';
 const PROJECT_LIST_PAGE_SIZE = 8;
 const PROJECT_LIST_CACHE_TTL_MS = 3000;
 const PROJECT_MANAGEMENT_GENRE = 'comic';
-const MESSAGE_HIDE_DURATION_MS = 2500;
+const MESSAGE_HIDE_DURATION_MS = 3000;
 const projectListCache = new Map();
 
 const MENU_ROUTE_MAP = {
@@ -317,10 +317,12 @@ function App() {
     visible: false,
     text: '',
     type: 'info',
+    sequence: 0,
   });
   const [confirmDialog, setConfirmDialog] = useState(createDefaultConfirmDialogState);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const messageTimerRef = useRef(0);
+  const messageSequenceRef = useRef(0);
 
   const activeMenu = resolveActiveMenu(location.pathname);
   const currentTeamName = useMemo(
@@ -377,16 +379,23 @@ function App() {
     }
 
     clearMessageTimer();
+    const sequence = messageSequenceRef.current + 1;
+    messageSequenceRef.current = sequence;
     setMessageState({
       visible: true,
       text,
       type,
+      sequence,
     });
     messageTimerRef.current = window.setTimeout(() => {
-      setMessageState((current) => ({
-        ...current,
-        visible: false,
-      }));
+      setMessageState((current) =>
+        current.sequence === sequence
+          ? {
+              ...current,
+              visible: false,
+            }
+          : current,
+      );
       messageTimerRef.current = 0;
     }, MESSAGE_HIDE_DURATION_MS);
   }
@@ -602,8 +611,18 @@ function App() {
     const safeAccount = account.trim();
     const safePassword = password.trim();
 
-    if (!safeAccount || !safePassword) {
-      showNoticeDialog('请输入账号和密码');
+    if (!safeAccount && !safePassword) {
+      showMessage('请输入用户名和密码', 'warning');
+      return;
+    }
+
+    if (!safeAccount) {
+      showMessage('请输入用户名', 'warning');
+      return;
+    }
+
+    if (!safePassword) {
+      showMessage('请输入密码', 'warning');
       return;
     }
 
@@ -1004,6 +1023,7 @@ function App() {
     error: styles.messageError,
   };
   const currentMessageClass = messageTypeClassMap[messageState.type] || styles.messageInfo;
+  const loginMessageClass = location.pathname === '/login' ? styles.loginTopMessage : '';
   const availablePointsValue = resolveAvailablePoints(pointsWallet);
   const isMainAccount = resolveIsMainAccount(pointsWallet);
   const availablePointsText = pointsWalletLoading
@@ -1046,7 +1066,12 @@ function App() {
       </Routes>
 
       {messageState.visible && (
-        <div className={`${styles.topMessage} ${currentMessageClass}`} role="status" aria-live="polite">
+        <div
+          className={`${styles.topMessage} ${currentMessageClass} ${loginMessageClass}`}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           {messageState.text}
         </div>
       )}
