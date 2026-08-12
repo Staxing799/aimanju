@@ -1,0 +1,161 @@
+@import (reference) '../../styles/theme.less';
+
+.pagination {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #cad6ff;
+  font-size: 13px;
+  border-top: 1px solid rgba(78, 118, 194, 0.42);
+  padding-top: 10px;
+}
+
+.paginationSummary {
+  margin-right: auto;
+  color: #d8e6ff;
+  white-space: nowrap;
+}
+
+.pageSizeWrap {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+}
+
+.pageSizeSelect {
+  min-width: 98px;
+}
+
+.pageArrow {
+  .neon-button();
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.pageNumbers {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pageNumber {
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #d5e4ff;
+  font-size: 13px;
+
+  &:hover {
+    border-color: rgba(102, 145, 233, 0.7);
+    background: rgba(19, 35, 73, 0.74);
+    transform: none;
+  }
+}
+
+.pageNumberActive {
+  color: #3eb0ff;
+  font-weight: 600;
+}
+
+.pageEllipsis {
+  color: #91a8d3;
+  padding: 0 4px;
+}
+
+.gotoWrap {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  color: #cedcff;
+  white-space: nowrap;
+  min-height: 32px;
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    line-height: 1;
+  }
+
+  input {
+    width: 52px;
+    min-height: 32px;
+    border-radius: 8px;
+    border: 1px solid rgba(93, 125, 196, 0.9);
+    background: rgba(12, 24, 53, 0.92);
+    color: #e9f1ff;
+    text-align: center;
+    padding: 0 6px;
+    font-size: 13px;
+
+    &::-webkit-outer-spin-button,
+    &::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+  }
+}
+
+@media (max-width: 980px) {
+  .pagination {
+    gap: 8px;
+  }
+}
+
+@media (max-width: 720px) {
+  .paginationSummary {
+    margin-right: 0;
+    width: 100%;
+  }
+
+  .pagination {
+    justify-content: flex-start;
+  }
+}
+
+.pagination {
+  color: #aaa59e;
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.paginationSummary,
+.gotoWrap {
+  color: #bdb7af;
+}
+
+.pageNumber {
+  color: #aaa59e;
+
+  &:hover {
+    border-color: rgba(255, 104, 70, 0.38);
+    background: rgba(255, 104, 70, 0.08);
+  }
+}
+
+.pageNumberActive {
+  color: #ff8063;
+}
+
+.pageEllipsis {
+  color: #6f6b65;
+}
+
+.gotoWrap input {
+  border-color: rgba(255, 255, 255, 0.11);
+  background: #161618;
+  color: #f1ece5;
+}

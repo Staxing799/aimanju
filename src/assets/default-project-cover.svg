@@ -1,0 +1,44 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1e2f72"/>
+      <stop offset="52%" stop-color="#0f1b45"/>
+      <stop offset="100%" stop-color="#102a52"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="18%" cy="25%" r="55%">
+      <stop offset="0%" stop-color="#42d9ff" stop-opacity="0.44"/>
+      <stop offset="100%" stop-color="#42d9ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="78%" cy="20%" r="48%">
+      <stop offset="0%" stop-color="#27ffd4" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#27ffd4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowC" cx="60%" cy="75%" r="58%">
+      <stop offset="0%" stop-color="#6f8dff" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#6f8dff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <rect width="1280" height="720" fill="url(#glowA)"/>
+  <rect width="1280" height="720" fill="url(#glowB)"/>
+  <rect width="1280" height="720" fill="url(#glowC)"/>
+  <g opacity="0.22" stroke="#8bc9ff" stroke-width="1.2" fill="none">
+    <path d="M0 148H1280"/>
+    <path d="M0 308H1280"/>
+    <path d="M0 468H1280"/>
+    <path d="M176 0V720"/>
+    <path d="M414 0V720"/>
+    <path d="M652 0V720"/>
+    <path d="M890 0V720"/>
+    <path d="M1128 0V720"/>
+  </g>
+  <g opacity="0.8">
+    <circle cx="236" cy="182" r="5" fill="#8ce7ff"/>
+    <circle cx="503" cy="120" r="3.5" fill="#7fffd6"/>
+    <circle cx="871" cy="174" r="4" fill="#9db8ff"/>
+    <circle cx="1045" cy="258" r="3" fill="#7fffd6"/>
+    <circle cx="335" cy="542" r="4.2" fill="#8ce7ff"/>
+    <circle cx="779" cy="606" r="3.2" fill="#9db8ff"/>
+    <circle cx="1124" cy="520" r="4" fill="#8ce7ff"/>
+  </g>
+</svg>

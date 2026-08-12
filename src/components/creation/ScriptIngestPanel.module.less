@@ -1,0 +1,112 @@
+﻿@import (reference) '../../styles/theme.less';
+
+.panel {
+  .neon-panel();
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.header {
+  h3 {
+    .section-title();
+    font-size: 19px;
+  }
+
+  p {
+    margin-top: 4px;
+    .section-subtitle();
+  }
+}
+
+.uploadRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filePicker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px dashed #4e5bb0;
+  background: rgba(26, 35, 67, 0.82);
+  color: #dbe4ff;
+  width: auto;
+  cursor: pointer;
+
+  input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+}
+
+.fileLabel {
+  color: @text-muted;
+  font-size: 13px;
+}
+
+.modelGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.modelCard {
+  .neon-button();
+  width: 100%;
+  text-align: left;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 136px;
+
+  p {
+    margin: 2px 0 0;
+    .section-subtitle();
+    font-size: 12px;
+  }
+}
+
+.selected {
+  border-color: #5d6cff;
+  box-shadow: 0 0 0 1px rgba(101, 121, 255, 0.35), 0 10px 24px rgba(47, 66, 135, 0.38);
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.primaryButton {
+  .primary-button();
+}
+
+.statusTag {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid #3c5190;
+  background: rgba(20, 36, 74, 0.76);
+  color: #c2d1ff;
+  font-size: 12px;
+}
+
+@media (max-width: 1080px) {
+  .modelGrid {
+    grid-template-columns: repeat(2, minmax(170px, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .modelGrid {
+    grid-template-columns: 1fr;
+  }
+}

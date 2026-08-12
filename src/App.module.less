@@ -1,0 +1,206 @@
+.authView,
+.workspaceView {
+  min-height: 100vh;
+}
+
+.workspaceView {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.topMessage {
+  position: fixed;
+  top: clamp(14px, 2.2vh, 26px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  min-width: min(320px, calc(100vw - 32px));
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 11px 18px;
+  border-radius: 12px;
+  border: 1px solid #4f628d;
+  background: linear-gradient(145deg, rgba(35, 47, 77, 0.94), rgba(22, 31, 54, 0.95));
+  box-shadow: 0 14px 28px rgba(4, 8, 19, 0.4);
+  color: #f1f6ff;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.45;
+  pointer-events: none;
+  animation: messageSlideDown 0.2s ease;
+}
+
+.messageInfo {
+  border-color: #5273a7;
+}
+
+.messageSuccess {
+  border-color: #3eb89b;
+  background: linear-gradient(145deg, rgba(20, 58, 61, 0.95), rgba(17, 42, 47, 0.95));
+}
+
+.messageWarning {
+  border-color: #d08e4a;
+  background: linear-gradient(145deg, rgba(69, 47, 25, 0.95), rgba(50, 35, 18, 0.95));
+}
+
+.messageError {
+  border-color: #d26870;
+  background: linear-gradient(145deg, rgba(72, 33, 41, 0.95), rgba(52, 23, 30, 0.95));
+}
+
+.confirmMask {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(5, 8, 18, 0.62);
+  backdrop-filter: blur(2px);
+}
+
+.confirmDialog {
+  width: min(440px, calc(100vw - 30px));
+  border: 1px solid #4e638f;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(40, 132, 214, 0.22), transparent 52%),
+    linear-gradient(140deg, rgba(23, 33, 58, 0.96), rgba(16, 23, 43, 0.97));
+  box-shadow: 0 24px 44px rgba(3, 7, 18, 0.52);
+  padding: clamp(16px, 1.4vw, 22px);
+  display: grid;
+  gap: 14px;
+}
+
+.confirmTitle {
+  margin: 0;
+  color: #eff5ff;
+  font-size: clamp(16px, 1vw, 19px);
+  line-height: 1.2;
+}
+
+.confirmContent {
+  margin: 0;
+  color: #c5d4f1;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.confirmCancelButton {
+  width: auto;
+  border-radius: 10px;
+  border: 1px solid #3f5685;
+  background: rgba(23, 34, 59, 0.96);
+  color: #deebff;
+  padding: 8px 14px;
+
+  &:hover {
+    border-color: #5880bf;
+  }
+
+  &:disabled {
+    opacity: 0.62;
+    cursor: not-allowed;
+  }
+}
+
+.confirmPrimaryButton {
+  width: auto;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #17e8bd, #32d0ef);
+  color: #01393a;
+  font-weight: 600;
+  padding: 8px 14px;
+  box-shadow: 0 10px 20px rgba(17, 225, 191, 0.26);
+
+  &:hover {
+    filter: brightness(1.03);
+  }
+
+  &:disabled {
+    opacity: 0.72;
+    cursor: not-allowed;
+    filter: none;
+  }
+}
+
+@keyframes messageSlideDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.topMessage {
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 13px;
+  background: rgba(28, 28, 31, 0.96);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+  color: #f4f1ea;
+  backdrop-filter: blur(14px);
+}
+
+.messageInfo {
+  border-color: rgba(108, 168, 255, 0.42);
+}
+
+.messageSuccess {
+  border-color: rgba(100, 216, 175, 0.46);
+  background: rgba(20, 42, 35, 0.96);
+}
+
+.messageWarning {
+  border-color: rgba(242, 184, 75, 0.5);
+  background: rgba(45, 36, 20, 0.96);
+}
+
+.messageError {
+  border-color: rgba(255, 109, 120, 0.46);
+  background: rgba(48, 24, 28, 0.96);
+}
+
+.confirmMask {
+  background: rgba(5, 5, 6, 0.76);
+  backdrop-filter: blur(10px);
+}
+
+.confirmDialog {
+  border-color: rgba(255, 255, 255, 0.11);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 104, 70, 0.1), transparent 38%),
+    linear-gradient(145deg, #202023, #171719);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.48);
+}
+
+.confirmTitle {
+  color: #f5f0e8;
+}
+
+.confirmContent {
+  color: #aaa59e;
+}
+
+.confirmCancelButton {
+  border-color: rgba(255, 255, 255, 0.11);
+  background: #242326;
+  color: #d7d2cb;
+}
+
+.confirmPrimaryButton {
+  background: linear-gradient(135deg, #ff6846, #f2b84b);
+  color: #1c100b;
+  box-shadow: 0 12px 26px rgba(255, 104, 70, 0.2);
+}

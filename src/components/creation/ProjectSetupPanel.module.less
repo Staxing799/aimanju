@@ -1,0 +1,70 @@
+﻿@import (reference) '../../styles/theme.less';
+
+.panel {
+  .neon-panel();
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.header {
+  h3 {
+    .section-title();
+    font-size: 19px;
+  }
+
+  p {
+    margin-top: 4px;
+    .section-subtitle();
+  }
+}
+
+.inlineGrid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.projectMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid #2a3f70;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(17, 26, 49, 0.82);
+
+  span {
+    color: @text-muted;
+    font-size: 13px;
+  }
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.primaryButton {
+  .primary-button();
+}
+
+@media (max-width: 1180px) {
+  .formGrid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .inlineGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+}
