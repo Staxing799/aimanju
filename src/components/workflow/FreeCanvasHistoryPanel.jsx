@@ -12,6 +12,7 @@ const HISTORY_SCROLL_COPY = {
   projectUnavailable: '\u753b\u5e03\u9879\u76ee\u672a\u5c31\u7eea',
   loadError: '\u5386\u53f2\u8bb0\u5f55\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5',
   scrollRegion: '\u5386\u53f2\u8bb0\u5f55\u6eda\u52a8\u5217\u8868',
+  guide: '\u9009\u62e9\u4efb\u610f\u8bb0\u5f55\uff0c\u5373\u53ef\u6062\u590d\u5b8c\u6574\u751f\u6210\u94fe\u8def',
 };
 
 const MEDIA_FILTERS = [
@@ -619,7 +620,12 @@ export default function FreeCanvasHistoryPanel({
             <small>{mediaFilter === 'all' ? '完成一次生成后，记录会出现在这里' : `暂无${MEDIA_LABELS[mediaFilter]}生成记录`}</small>
           </div>
         ) : (
-          <div className={styles.list}>
+          <>
+            <div className={styles.restoreGuide} role="note">
+              <span className={styles.restoreGuideIcon} aria-hidden>{'\u21B6'}</span>
+              <span>{HISTORY_SCROLL_COPY.guide}</span>
+            </div>
+            <div className={styles.list}>
             {items.map((item) => {
               const isRestoring = restoringHistoryId === item.id;
               return (
@@ -679,14 +685,10 @@ export default function FreeCanvasHistoryPanel({
             ) : (
               <span className={styles.listEnd}>{HISTORY_SCROLL_COPY.end}</span>
             )}
-          </div>
+            </div>
+          </>
         )}
       </div>
-
-      <footer className={styles.footer}>
-        <span className={styles.footerClock} aria-hidden />
-        <span>点击记录即可在当前画布恢复完整生成链路</span>
-      </footer>
     </aside>
   );
 }
