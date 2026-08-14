@@ -1,9 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { freeCanvasApi } from '../../api';
 import { parseApiErrorMessage } from '../../utils/projectAdapter';
 import styles from './FreeCanvasHistoryPanel.module.less';
 
 const HISTORY_PAGE_SIZE = 30;
+const HISTORY_SCROLL_COPY = {
+  loading: '\u6b63\u5728\u52a0\u8f7d\u66f4\u591a...',
+  continue: '\u7ee7\u7eed\u4e0b\u6ed1\u52a0\u8f7d\u66f4\u591a',
+  end: '\u6ca1\u6709\u66f4\u591a\u4e86',
+  retry: '\u91cd\u8bd5',
+  projectUnavailable: '\u753b\u5e03\u9879\u76ee\u672a\u5c31\u7eea',
+  loadError: '\u5386\u53f2\u8bb0\u5f55\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5',
+  scrollRegion: '\u5386\u53f2\u8bb0\u5f55\u6eda\u52a8\u5217\u8868',
+};
 
 const MEDIA_FILTERS = [
   { value: 'all', label: '全部' },
@@ -216,15 +225,6 @@ function findHistoryArray(payload) {
   return [];
 }
 
-function findPagingContainer(payload) {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    return {};
-  }
-  const nested = [payload.data, payload.result, payload.payload]
-    .find((value) => value && typeof value === 'object' && !Array.isArray(value));
-  return nested || payload;
-}
-
 function resolvePreview(item, mediaType) {
   const directPreviewUrl = firstText(item.preview_url, item.previewUrl);
   if (isMediaUrl(directPreviewUrl)) {
@@ -345,24 +345,11 @@ function normalizeHistoryItem(rawItem) {
 }
 
 function normalizeHistoryPage(payload) {
-  const paging = findPagingContainer(payload);
   const items = findHistoryArray(payload)
     .map(normalizeHistoryItem)
     .filter((item) => item.id);
-  const nextCursor = firstText(
-    paging.next_cursor,
-    paging.nextCursor,
-    payload?.next_cursor,
-    payload?.nextCursor,
-  );
-  const explicitHasMore =
-    paging.has_more ?? paging.hasMore ?? payload?.has_more ?? payload?.hasMore;
 
-  return {
-    items,
-    nextCursor,
-    hasMore: typeof explicitHasMore === 'boolean' ? explicitHasMore : Boolean(nextCursor),
-  };
+  return { items };
 }
 
 function formatHistoryTime(value) {
@@ -432,70 +419,111 @@ export default function FreeCanvasHistoryPanel({
 }) {
   const [mediaFilter, setMediaFilter] = useState('all');
   const [items, setItems] = useState([]);
-  const [nextCursor, setNextCursor] = useState('');
+  const [requestedPageSize, setRequestedPageSize] = useState(HISTORY_PAGE_SIZE);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [loadMoreError, setLoadMoreError] = useState('');
   const requestSerialRef = useRef(0);
+  const scrollBodyRef = useRef(null);
+  const loadTriggerRef = useRef(null);
 
-  async function loadHistory({ append = false, cursor = '' } = {}) {
+  const loadHistory = useCallback(async ({ requestedSize = HISTORY_PAGE_SIZE, expanding = false } = {}) => {
     if (!projectId) {
       setItems([]);
-      setNextCursor('');
       setHasMore(false);
-      setErrorMessage('画布项目未就绪');
+      setErrorMessage(HISTORY_SCROLL_COPY.projectUnavailable);
       return;
     }
 
     const requestSerial = requestSerialRef.current + 1;
     requestSerialRef.current = requestSerial;
-    if (append) {
+    if (expanding) {
       setLoadingMore(true);
+      setLoadMoreError('');
     } else {
       setLoading(true);
+      setLoadingMore(false);
       setItems([]);
+      setHasMore(false);
+      setLoadMoreError('');
     }
     setErrorMessage('');
 
     try {
       const result = await freeCanvasApi.listHistory(projectId, {
-        cursor: cursor || undefined,
-        page_size: HISTORY_PAGE_SIZE,
+        page_size: requestedSize,
         media_type: mediaFilter === 'all' ? undefined : mediaFilter,
       });
       if (requestSerialRef.current !== requestSerial) {
         return;
       }
       const page = normalizeHistoryPage(result);
-      setItems((current) => (append ? [...current, ...page.items] : page.items));
-      setNextCursor(page.nextCursor);
-      setHasMore(page.hasMore);
+      setItems(page.items);
+      setHasMore(page.items.length === requestedSize);
     } catch (error) {
       if (requestSerialRef.current !== requestSerial) {
         return;
       }
-      setErrorMessage(parseApiErrorMessage(error, '历史记录加载失败，请稍后重试'));
+      const message = parseApiErrorMessage(error, HISTORY_SCROLL_COPY.loadError);
+      if (expanding) {
+        setLoadMoreError(message);
+      } else {
+        setErrorMessage(message);
+      }
     } finally {
       if (requestSerialRef.current === requestSerial) {
         setLoading(false);
         setLoadingMore(false);
       }
     }
-  }
+  }, [mediaFilter, projectId]);
 
   useEffect(() => {
     if (!open) {
       requestSerialRef.current += 1;
       return undefined;
     }
-    loadHistory();
+    setRequestedPageSize(HISTORY_PAGE_SIZE);
+    loadHistory({ requestedSize: HISTORY_PAGE_SIZE });
     return () => {
       requestSerialRef.current += 1;
     };
-    // The request is intentionally restarted only when the visible query changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaFilter, open, projectId]);
+  }, [loadHistory, open]);
+
+  const loadNextPage = useCallback(() => {
+    if (!hasMore || loading || loadingMore || restoringHistoryId) {
+      return;
+    }
+
+    const nextPageSize = requestedPageSize + HISTORY_PAGE_SIZE;
+    setRequestedPageSize(nextPageSize);
+    loadHistory({ requestedSize: nextPageSize, expanding: true });
+  }, [hasMore, loadHistory, loading, loadingMore, requestedPageSize, restoringHistoryId]);
+
+  useEffect(() => {
+    const scrollBody = scrollBodyRef.current;
+    const loadTrigger = loadTriggerRef.current;
+    if (!open || !scrollBody || !loadTrigger || !hasMore || loading || loadingMore) {
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          loadNextPage();
+        }
+      },
+      {
+        root: scrollBody,
+        rootMargin: '0px 0px 24px 0px',
+        threshold: 0.25,
+      },
+    );
+    observer.observe(loadTrigger);
+    return () => observer.disconnect();
+  }, [hasMore, loadNextPage, loading, loadingMore, open]);
 
   useEffect(() => {
     if (!open) {
@@ -562,7 +590,15 @@ export default function FreeCanvasHistoryPanel({
         </div>
       ) : null}
 
-      <div className={styles.body} aria-live="polite" aria-busy={loading || loadingMore}>
+      <div
+        ref={scrollBodyRef}
+        className={styles.body}
+        role="region"
+        aria-label={HISTORY_SCROLL_COPY.scrollRegion}
+        aria-live="polite"
+        aria-busy={loading || loadingMore}
+        tabIndex={0}
+      >
         {loading ? (
           <div className={styles.state}>
             <span className={styles.spinner} aria-hidden />
@@ -619,17 +655,29 @@ export default function FreeCanvasHistoryPanel({
               );
             })}
 
-            {hasMore ? (
-              <button
-                className={styles.loadMoreButton}
-                type="button"
-                onClick={() => loadHistory({ append: true, cursor: nextCursor })}
-                disabled={loadingMore || Boolean(restoringHistoryId)}
-              >
-                {loadingMore ? '加载中…' : '加载更多'}
-              </button>
+            {loadingMore ? (
+              <div className={styles.scrollLoading} role="status">
+                <span className={styles.spinner} aria-hidden />
+                <span>{HISTORY_SCROLL_COPY.loading}</span>
+              </div>
+            ) : loadMoreError ? (
+              <div className={styles.scrollLoadError} role="alert">
+                <span>{loadMoreError}</span>
+                <button
+                  type="button"
+                  onClick={() => loadHistory({ requestedSize: requestedPageSize, expanding: true })}
+                  disabled={Boolean(restoringHistoryId)}
+                >
+                  {HISTORY_SCROLL_COPY.retry}
+                </button>
+              </div>
+            ) : hasMore ? (
+              <div ref={loadTriggerRef} className={styles.scrollLoadTrigger} role="status">
+                <span className={styles.scrollLoadMark} aria-hidden />
+                <span>{HISTORY_SCROLL_COPY.continue}</span>
+              </div>
             ) : (
-              <span className={styles.listEnd}>已显示全部记录</span>
+              <span className={styles.listEnd}>{HISTORY_SCROLL_COPY.end}</span>
             )}
           </div>
         )}

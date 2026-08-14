@@ -151,6 +151,11 @@
   background: rgba(255, 255, 255, 0.16);
 }
 
+.body:focus-visible {
+  outline: 1px solid rgba(255, 104, 70, 0.42);
+  outline-offset: -2px;
+}
+
 .list {
   display: grid;
   gap: 5px;
@@ -472,19 +477,69 @@
   font-weight: 850;
 }
 
-.loadMoreButton {
-  min-height: 44px;
+.scrollLoadTrigger,
+.scrollLoading {
+  min-height: 46px;
   margin: 6px 6px 0;
-  border-color: rgba(255, 255, 255, 0.09) !important;
-  background: rgba(255, 255, 255, 0.035) !important;
-  color: #a49b8d;
-  font-size: 12px;
-  font-weight: 720;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #8f8982;
+  font-size: 11px;
+  font-weight: 680;
 }
 
-.loadMoreButton:hover {
-  border-color: rgba(255, 104, 70, 0.3) !important;
-  color: #ffd2c7;
+.scrollLoadTrigger {
+  border-style: dashed;
+}
+
+.scrollLoadMark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff7858;
+  box-shadow: 0 0 0 0 rgba(255, 104, 70, 0.28);
+  animation: scrollLoadPulse 1.6s ease-out infinite;
+}
+
+.scrollLoading {
+  color: #c7bfb6;
+}
+
+.scrollLoading .spinner {
+  width: 15px;
+  height: 15px;
+}
+
+.scrollLoadError {
+  min-height: 52px;
+  margin: 6px 6px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(255, 109, 120, 0.24);
+  border-radius: 10px;
+  background: rgba(255, 109, 120, 0.06);
+  padding: 7px 8px 7px 11px;
+  color: #d7a5aa;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.scrollLoadError button {
+  min-width: 60px;
+  min-height: 36px;
+  flex: 0 0 auto;
+  border-color: rgba(255, 109, 120, 0.28) !important;
+  background: rgba(255, 109, 120, 0.08) !important;
+  color: #ffcbd0;
+  font-size: 11px;
+  font-weight: 750;
 }
 
 .listEnd {
@@ -550,6 +605,13 @@
   }
 }
 
+@keyframes scrollLoadPulse {
+  70%,
+  100% {
+    box-shadow: 0 0 0 7px rgba(255, 104, 70, 0);
+  }
+}
+
 @media (max-width: 860px) {
   .panel {
     top: 72px;
@@ -579,7 +641,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .panel,
-  .spinner {
+  .spinner,
+  .scrollLoadMark {
     animation-duration: 1ms;
   }
 

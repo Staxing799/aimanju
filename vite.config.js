@@ -37,8 +37,9 @@ const asyncCssPlugin = () => {
 
 export default defineConfig(({ mode }) => {
   // const baseUrl = 'https://short-series.mrstage.com';
+  const baseUrl = 'https://www.aiyo.top';
 
-  const baseUrl = 'http://192.168.50.200:8000';
+  // const baseUrl = 'http://192.168.50.200:8000';
   // const baseUrl = 'http://frp.xjetry.fun:8000';
   const env = loadEnv(mode, __dirname, '');
   const isProd = mode === 'prod';
