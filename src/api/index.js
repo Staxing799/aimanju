@@ -52,6 +52,14 @@ export const freeCanvasApi = {
     request.get(`${API_PREFIX}/free-canvas/projects/${projectId}/graph`),
   patchGraph: (projectId, data) =>
     request.patch(`${API_PREFIX}/free-canvas/projects/${projectId}/graph`, data),
+  listHistory: (projectId, params = {}) =>
+    request.get(`${API_PREFIX}/free-canvas/projects/${projectId}/history`, { params }),
+  getHistoryDetail: (projectId, historyId) =>
+    request.get(`${API_PREFIX}/free-canvas/projects/${projectId}/history/${historyId}`),
+  restoreHistory: (projectId, historyId, data) =>
+    request.post(`${API_PREFIX}/free-canvas/projects/${projectId}/history/${historyId}/restore`, data),
+  listOperations: (projectId, params = {}) =>
+    request.get(`${API_PREFIX}/free-canvas/projects/${projectId}/operations`, { params }),
   generateNode: (projectId, nodeId, data) =>
     request.post(`${API_PREFIX}/free-canvas/projects/${projectId}/nodes/${nodeId}/generate`, data),
   runGroup: (projectId, groupId, data) =>

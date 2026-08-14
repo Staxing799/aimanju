@@ -2257,6 +2257,50 @@
   pointer-events: auto;
 }
 
+.canvasHistoryButton {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-color: rgba(232, 238, 250, 0.18) !important;
+  border-radius: 8px !important;
+  display: grid;
+  place-items: center;
+  background: rgba(31, 35, 43, 0.96) !important;
+  color: rgba(236, 241, 248, 0.92);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
+  pointer-events: auto;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.canvasHistoryButton svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.canvasHistoryButton:hover:not(:disabled),
+.canvasHistoryButton:focus-visible,
+.canvasHistoryButtonActive {
+  border-color: rgba(94, 215, 255, 0.48) !important;
+  background: rgba(39, 44, 54, 0.98) !important;
+  color: rgba(236, 241, 248, 0.98);
+}
+
+.canvasHistoryButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
 .canvasVideoControls {
   position: absolute;
   z-index: 3;
@@ -4509,6 +4553,21 @@
     0 0 0 2px rgba(255, 111, 134, 0.1);
   pointer-events: none;
   transform: translate(12px, -50%);
+}
+
+.connectionNoticeCentered {
+  position: fixed;
+  left: 50%;
+  top: max(24px, calc(env(safe-area-inset-top) + 16px));
+  min-height: 36px;
+  padding: 0 14px;
+  border-color: rgba(94, 215, 255, 0.34);
+  background: rgba(31, 35, 43, 0.97);
+  color: rgba(236, 241, 248, 0.96);
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.36),
+    0 0 0 2px rgba(94, 215, 255, 0.08);
+  transform: translateX(-50%);
 }
 
 .nodeHeader {

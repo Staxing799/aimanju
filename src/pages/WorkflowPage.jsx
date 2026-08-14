@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { freeCanvasApi, pointsApi } from '../api';
+import FreeCanvasHistoryPanel from '../components/workflow/FreeCanvasHistoryPanel';
 import {
   createFreeCanvasUntitledName,
   normalizeFreeCanvasProjectName,
@@ -513,6 +514,65 @@ function formatGenerationDate(value) {
     second: '2-digit',
     hour12: false,
   }).format(new Date(timestamp));
+}
+
+function createHistoryRestoreRequestId() {
+  const randomPart =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID().replace(/-/g, '')
+      : Math.random().toString(36).slice(2);
+  return `history-${Date.now().toString(36)}-${randomPart}`.slice(0, 64);
+}
+
+function getHistoryRestoreNodeIds(payload) {
+  const containers = [payload, payload?.data, payload?.result]
+    .filter((value) => value && typeof value === 'object' && !Array.isArray(value));
+  const nodeIds = new Set();
+
+  containers.forEach((container) => {
+    [
+      container.node_ids,
+      container.nodeIds,
+      container.restored_node_ids,
+      container.restoredNodeIds,
+      container.created_node_ids,
+      container.createdNodeIds,
+    ].forEach((values) => {
+      if (Array.isArray(values)) {
+        values.forEach((value) => {
+          const nodeId = String(value ?? '').trim();
+          if (nodeId) {
+            nodeIds.add(nodeId);
+          }
+        });
+      }
+    });
+
+    [container.node_id_map, container.nodeIdMap].forEach((valueMap) => {
+      if (valueMap && typeof valueMap === 'object' && !Array.isArray(valueMap)) {
+        Object.values(valueMap).forEach((value) => {
+          const nodeId = String(value ?? '').trim();
+          if (nodeId) {
+            nodeIds.add(nodeId);
+          }
+        });
+      }
+    });
+
+    [
+      container.target_node_id,
+      container.targetNodeId,
+      container.restored_target_node_id,
+      container.restoredTargetNodeId,
+    ].forEach((value) => {
+      const nodeId = String(value ?? '').trim();
+      if (nodeId) {
+        nodeIds.add(nodeId);
+      }
+    });
+  });
+
+  return Array.from(nodeIds);
 }
 
 function formatFileSize(value) {
@@ -2700,6 +2760,109 @@ function expandGroupToContainNodes(group, memberNodes = [], padding = GROUP_CONT
   };
 }
 
+function reconcileRestoredCanvasGroups({
+  nodes = [],
+  groups = [],
+  restoredNodeIds = [],
+  previousGroups = [],
+  createGroupId,
+}) {
+  const restoredNodeIdSet = new Set(restoredNodeIds.filter(Boolean));
+  if (restoredNodeIdSet.size === 0) {
+    return { nodes, groups, didRepair: false };
+  }
+
+  const previousGroupMap = new Map(previousGroups.map((group) => [group.id, group]));
+  const returnedGroupMap = new Map(groups.map((group) => [group.id, group]));
+  const occupiedGroupIds = new Set(
+    nodes
+      .filter((node) => !restoredNodeIdSet.has(node.id) && node.groupId)
+      .map((node) => node.groupId),
+  );
+  const restoredSourceGroupIds = Array.from(
+    new Set(
+      nodes
+        .filter((node) => restoredNodeIdSet.has(node.id) && node.groupId)
+        .map((node) => node.groupId),
+    ),
+  );
+  if (restoredSourceGroupIds.length === 0) {
+    const referencedGroupIds = new Set(nodes.map((node) => node.groupId).filter(Boolean));
+    const preservedGroupMap = new Map(groups.map((group) => [group.id, group]));
+    previousGroups.forEach((group) => preservedGroupMap.set(group.id, group));
+    return {
+      nodes,
+      groups: Array.from(preservedGroupMap.values()).filter((group) =>
+        referencedGroupIds.has(group.id),
+      ),
+      didRepair: previousGroups.length > 0,
+    };
+  }
+
+  const usedGroupIds = new Set([
+    ...groups.map((group) => group.id),
+    ...nodes.map((node) => node.groupId).filter(Boolean),
+  ]);
+  const restoredGroupIdMap = new Map();
+  restoredSourceGroupIds.forEach((sourceGroupId) => {
+    const hasCollision =
+      previousGroupMap.has(sourceGroupId) || occupiedGroupIds.has(sourceGroupId);
+    if (!hasCollision) {
+      restoredGroupIdMap.set(sourceGroupId, sourceGroupId);
+      return;
+    }
+
+    let nextGroupId = '';
+    do {
+      nextGroupId = createGroupId();
+    } while (!nextGroupId || usedGroupIds.has(nextGroupId));
+    usedGroupIds.add(nextGroupId);
+    restoredGroupIdMap.set(sourceGroupId, nextGroupId);
+  });
+
+  const nextNodes = nodes.map((node) => {
+    if (!restoredNodeIdSet.has(node.id) || !node.groupId) {
+      return node;
+    }
+    const nextGroupId = restoredGroupIdMap.get(node.groupId) || '';
+    return nextGroupId === node.groupId ? node : { ...node, groupId: nextGroupId };
+  });
+
+  const nextGroupMap = new Map(groups.map((group) => [group.id, group]));
+  previousGroups.forEach((group) => nextGroupMap.set(group.id, group));
+  restoredSourceGroupIds.forEach((sourceGroupId) => {
+    const targetGroupId = restoredGroupIdMap.get(sourceGroupId);
+    const memberNodes = nextNodes.filter(
+      (node) => restoredNodeIdSet.has(node.id) && node.groupId === targetGroupId,
+    );
+    const region = getNodeSelectionRegion(memberNodes, GROUP_CONTENT_PADDING);
+    if (!targetGroupId || !region) {
+      return;
+    }
+
+    if (targetGroupId === sourceGroupId) {
+      nextGroupMap.delete(sourceGroupId);
+    }
+    const sourceGroup = returnedGroupMap.get(sourceGroupId) || previousGroupMap.get(sourceGroupId);
+    nextGroupMap.set(targetGroupId, {
+      ...(sourceGroup || {}),
+      id: targetGroupId,
+      title: String(sourceGroup?.title || '恢复分组'),
+      x: Math.round(region.left),
+      y: Math.round(region.top),
+      width: Math.max(GROUP_MIN_WIDTH, Math.round(region.right - region.left)),
+      height: Math.max(GROUP_MIN_HEIGHT, Math.round(region.bottom - region.top)),
+    });
+  });
+
+  const referencedGroupIds = new Set(nextNodes.map((node) => node.groupId).filter(Boolean));
+  const nextGroups = Array.from(nextGroupMap.values()).filter((group) =>
+    referencedGroupIds.has(group.id),
+  );
+
+  return { nodes: nextNodes, groups: nextGroups, didRepair: true };
+}
+
 function normalizeModelMediaType(value) {
   const normalized = String(value ?? '').trim().toLowerCase();
   const codeMap = {
@@ -3622,6 +3785,7 @@ function normalizeGraphPayload(graph) {
     return normalizedNode;
   });
   const nodeById = nodes.reduce((map, node) => ({ ...map, [node.id]: node }), {});
+  const referencedGroupIds = new Set(nodes.map((node) => node.groupId).filter(Boolean));
   const edges = graphEdges
     .map(normalizeGraphEdge)
     .filter((edge) => edge.id && canConnectNodes(nodeById[edge.from], nodeById[edge.to]))
@@ -3641,7 +3805,11 @@ function normalizeGraphPayload(graph) {
       };
     });
 
-  return { nodes, edges, groups: Array.from(groupMap.values()) };
+  return {
+    nodes,
+    edges,
+    groups: Array.from(groupMap.values()).filter((group) => referencedGroupIds.has(group.id)),
+  };
 }
 
 function getNodeMediaType(node) {
@@ -4461,6 +4629,9 @@ function WorkflowPage({
   const [alignmentGuides, setAlignmentGuides] = useState({ vertical: [], horizontal: [] });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+  const [restoringHistoryId, setRestoringHistoryId] = useState('');
+  const [historyRestoreError, setHistoryRestoreError] = useState('');
   const [isMinimapOpen, setIsMinimapOpen] = useState(false);
   const [editingNodeField, setEditingNodeField] = useState(null);
   const [openMediaGenerationTypeNodeId, setOpenMediaGenerationTypeNodeId] = useState('');
@@ -4527,6 +4698,8 @@ function WorkflowPage({
   const canvasMediaUploadAnchorRef = useRef(null);
   const canvasHistoryRef = useRef(createEmptyCanvasHistoryState());
   const canvasHistoryTimerRef = useRef(null);
+  const connectionNoticeTimerRef = useRef(null);
+  const historyRestoreRequestIdsRef = useRef(new Map());
   const undoCanvasHistoryRef = useRef(null);
   const redoCanvasHistoryRef = useRef(null);
   const canvasNodeClipboardRef = useRef(null);
@@ -4541,6 +4714,11 @@ function WorkflowPage({
 
   const closeMediaDetailViewer = useCallback(() => {
     setMediaDetailNodeId('');
+  }, []);
+
+  const closeHistoryPanel = useCallback(() => {
+    setIsHistoryPanelOpen(false);
+    setHistoryRestoreError('');
   }, []);
 
   useEffect(() => {
@@ -4856,6 +5034,24 @@ function WorkflowPage({
     const fallbackX = Math.round(window.innerWidth / 2);
     const fallbackY = 96;
     showConnectionNotice(event?.clientX || fallbackX, event?.clientY || fallbackY, text);
+  }
+
+  function showCenteredNotice(text) {
+    if (connectionNoticeTimerRef.current) {
+      window.clearTimeout(connectionNoticeTimerRef.current);
+    }
+    const messageId = `canvas-message-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setConnectionNotice({
+      centered: true,
+      messageId,
+      text,
+    });
+    connectionNoticeTimerRef.current = window.setTimeout(() => {
+      setConnectionNotice((current) => (
+        current?.messageId === messageId ? null : current
+      ));
+      connectionNoticeTimerRef.current = null;
+    }, 3000);
   }
 
   function beginProjectNameEdit() {
@@ -6429,6 +6625,9 @@ function WorkflowPage({
     }
     if (canvasHistoryTimerRef.current) {
       window.clearTimeout(canvasHistoryTimerRef.current);
+    }
+    if (connectionNoticeTimerRef.current) {
+      window.clearTimeout(connectionNoticeTimerRef.current);
     }
   }, []);
 
@@ -10674,6 +10873,177 @@ function WorkflowPage({
     setViewport(getFittedViewportForNodes(visibleNodes, width, height));
   }
 
+  function toggleHistoryPanel() {
+    if (!isGraphReady || !canvasProjectId || restoringHistoryId) {
+      return;
+    }
+    setIsHistoryPanelOpen((current) => !current);
+    setHistoryRestoreError('');
+    setIsAddMenuOpen(false);
+    setCanvasNodeMenu(null);
+    setCanvasContextMenu(null);
+    setIsMinimapOpen(false);
+  }
+
+  async function restoreCanvasHistory(historyItem) {
+    const historyId = String(historyItem?.id || '').trim();
+    if (!historyId || !canvasProjectId || !isGraphReady || restoringHistoryId) {
+      return;
+    }
+
+    setRestoringHistoryId(historyId);
+    setHistoryRestoreError('');
+    const requestKey = `${canvasProjectId}:${historyId}`;
+
+    try {
+      const saved = await saveGraphSnapshotNow(nodesRef.current, edgesRef.current);
+      if (!saved) {
+        throw new Error('当前画布保存失败，请稍后重试');
+      }
+
+      let baseVersionNo = canvasVersionRef.current;
+      if (baseVersionNo == null || !Number.isInteger(Number(baseVersionNo))) {
+        const latestGraph = await freeCanvasApi.getGraph(canvasProjectId);
+        baseVersionNo = getGraphVersion(latestGraph);
+      }
+      if (baseVersionNo == null || !Number.isInteger(Number(baseVersionNo))) {
+        throw new Error('画布版本未就绪，请刷新页面后重试');
+      }
+
+      const viewportRect = viewportRef.current?.getBoundingClientRect();
+      const viewportWidth = viewportRect?.width || viewportSize.width || window.innerWidth;
+      const viewportHeight = viewportRect?.height || viewportSize.height || window.innerHeight;
+      const anchor = {
+        x: Math.round((viewportWidth / 2 - viewport.x) / viewport.zoom),
+        y: Math.round((viewportHeight / 2 - viewport.y) / viewport.zoom),
+      };
+      const requestId =
+        historyRestoreRequestIdsRef.current.get(requestKey) || createHistoryRestoreRequestId();
+      historyRestoreRequestIdsRef.current.set(requestKey, requestId);
+      const previousNodeIds = new Set(nodesRef.current.map((node) => node.id));
+      const previousGroups = groupsRef.current.map((group) => ({ ...group }));
+
+      const restoreResult = await freeCanvasApi.restoreHistory(canvasProjectId, historyId, {
+        requestId,
+        baseVersionNo: Number(baseVersionNo),
+        mode: 'full_chain',
+        anchor,
+      });
+      const graph = await freeCanvasApi.getGraph(canvasProjectId);
+      const normalizedGraph = normalizeGraphPayload(graph);
+      let nextNodes = normalizeNodesModels(
+        normalizedGraph.nodes,
+        modelOptionsByNodeTypeRef.current,
+      );
+      const nextEdges = normalizedGraph.edges;
+      let nextGroups = normalizedGraph.groups;
+      const responseNodeIds = new Set(getHistoryRestoreNodeIds(restoreResult));
+      let restoredNodes = nextNodes.filter(
+        (node) => responseNodeIds.has(node.id) || !previousNodeIds.has(node.id),
+      );
+      const restoredNodeIds = restoredNodes.map((node) => node.id);
+      const reconciledGroups = reconcileRestoredCanvasGroups({
+        nodes: nextNodes,
+        groups: nextGroups,
+        restoredNodeIds,
+        previousGroups,
+        createGroupId: () => {
+          groupSequenceRef.current += 1;
+          return `group-history-${Date.now()}-${groupSequenceRef.current}`;
+        },
+      });
+      nextNodes = reconciledGroups.nodes;
+      nextGroups = reconciledGroups.groups;
+      restoredNodes = nextNodes.filter((node) => restoredNodeIds.includes(node.id));
+      const visibleRestoredNodes = restoredNodes.filter(
+        (node) => !isInternalVideoFrameNode(node),
+      );
+      const activeGenerationNodes = nextNodes.filter((node) =>
+        isActiveGenerationStatus(node.generationStatus || node.status),
+      );
+      const failedGenerationNodeIds = nextNodes
+        .filter((node) => isFailureGenerationStatus(node.generationStatus || node.status))
+        .map((node) => node.id);
+
+      clearAllNodeRunSyncTimers();
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      groupsRef.current = nextGroups;
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      setGroups(nextGroups);
+      setGeneratingNodeIds(activeGenerationNodes.map((node) => node.id));
+      setGenerationFailedNodeIds(failedGenerationNodeIds);
+      setDraggingNodeIds([]);
+      setDraggingGroupId('');
+      setGroupDropTargetId('');
+      setAlignmentGuides({ vertical: [], horizontal: [] });
+      setSelectionBox(null);
+      setSelectionRegion(null);
+      setFocusedGroupId('');
+      setConnectionAddMenu(null);
+      setCanvasNodeMenu(null);
+      setCanvasContextMenu(null);
+      setEditingNodeField(null);
+      setHoveredEdgeId('');
+      setConnectionNotice(null);
+
+      const focusNodeIds = visibleRestoredNodes.map((node) => node.id);
+      if (focusNodeIds.length > 0) {
+        setSelectedNodeIds(focusNodeIds);
+        setSelectedNodeId(focusNodeIds[focusNodeIds.length - 1]);
+      } else {
+        setSelectedNodeIds([]);
+        setSelectedNodeId('');
+      }
+      setSelectedEdgeId('');
+      setSelectedEdgeIds([]);
+      setPromptFocusNodeId('');
+      setExpandedPromptNodeId('');
+
+      const nextVersion =
+        getGraphVersion(graph) ??
+        getGraphVersion(restoreResult) ??
+        getGraphVersion(restoreResult?.data);
+      if (nextVersion != null) {
+        canvasVersionRef.current = nextVersion;
+      }
+      persistedNodeIdsRef.current = new Set(normalizedGraph.nodes.map((node) => node.id));
+      persistedEdgeIdsRef.current = new Set(normalizedGraph.edges.map((edge) => edge.id));
+      nodeSequenceRef.current = getEntitySequenceFloor(nextNodes);
+      edgeSequenceRef.current = getEntitySequenceFloor(nextEdges);
+      groupSequenceRef.current = getEntitySequenceFloor(nextGroups);
+      resetCanvasHistory(nextNodes, nextEdges, nextGroups);
+      if (reconciledGroups.didRepair) {
+        skipGraphSaveCountRef.current = 0;
+      } else {
+        skipUpcomingGraphSaves(1);
+      }
+
+      const nodesToFit = visibleRestoredNodes.length > 0
+        ? visibleRestoredNodes
+        : nextNodes.filter((node) => !isInternalVideoFrameNode(node));
+      setViewport(getFittedViewportForNodes(nodesToFit, viewportWidth, viewportHeight));
+
+      activeGenerationNodes.forEach((node) => {
+        if (node.generationRunId) {
+          scheduleNodeRunSync(canvasProjectId, node.id, node.generationRunId);
+        }
+      });
+      historyRestoreRequestIdsRef.current.delete(requestKey);
+      setIsHistoryPanelOpen(false);
+      showCenteredNotice(
+        visibleRestoredNodes.length > 0
+          ? `已恢复 ${visibleRestoredNodes.length} 个节点的完整链路`
+          : '历史链路已恢复',
+      );
+    } catch (error) {
+      setHistoryRestoreError(parseApiErrorMessage(error, '历史记录恢复失败，请稍后重试'));
+    } finally {
+      setRestoringHistoryId('');
+    }
+  }
+
   async function runCanvasGroup(groupId, event) {
     event?.preventDefault();
     event?.stopPropagation();
@@ -10996,6 +11366,21 @@ function WorkflowPage({
           }}
         >
           <button
+            className={`${styles.canvasHistoryButton} ${isHistoryPanelOpen ? styles.canvasHistoryButtonActive : ''}`}
+            type="button"
+            aria-label="打开历史记录"
+            aria-haspopup="dialog"
+            aria-expanded={isHistoryPanelOpen}
+            title="历史记录"
+            onClick={toggleHistoryPanel}
+            disabled={!isGraphReady || !canvasProjectId || Boolean(restoringHistoryId)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden>
+              <circle cx="12" cy="12" r="8.5" />
+              <path d="M12 7.5v5l3.2 2" />
+            </svg>
+          </button>
+          <button
             className={styles.canvasAddButton}
             type="button"
             aria-label="添加节点"
@@ -11031,6 +11416,14 @@ function WorkflowPage({
             </div>
           </div>
         </div>
+        <FreeCanvasHistoryPanel
+          open={isHistoryPanelOpen}
+          projectId={canvasProjectId}
+          restoringHistoryId={restoringHistoryId}
+          restoreError={historyRestoreError}
+          onClose={closeHistoryPanel}
+          onRestore={restoreCanvasHistory}
+        />
         {isGraphReady && visibleNodes.length === 0 && groups.length === 0 ? (
           <div
             className={styles.emptyCanvasPresets}
@@ -13041,11 +13434,15 @@ function WorkflowPage({
         ) : null}
         {connectionNotice ? (
           <div
-            className={styles.connectionNotice}
-            style={{
+            className={`${styles.connectionNotice} ${
+              connectionNotice.centered ? styles.connectionNoticeCentered : ''
+            }`}
+            style={connectionNotice.centered ? undefined : {
               left: connectionNotice.x,
               top: connectionNotice.y,
             }}
+            role={connectionNotice.centered ? 'status' : undefined}
+            aria-live={connectionNotice.centered ? 'polite' : undefined}
           >
             {connectionNotice.text}
           </div>
