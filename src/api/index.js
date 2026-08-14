@@ -212,6 +212,8 @@ export const userApi = {
     }),
   inviteTeamMember: (teamId, data) =>
     request.post(`${API_PREFIX}/users/teams/${teamId}/invite`, data),
+  removeTeamMember: (teamId, subUserId) =>
+    request.delete(`${API_PREFIX}/users/teams/${teamId}/members/${subUserId}`),
   selectTeam: (teamId, accessToken = '') =>
     request.post(
       `${API_PREFIX}/users/me/team/select`,

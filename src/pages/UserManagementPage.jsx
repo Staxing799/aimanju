@@ -9,6 +9,38 @@ const PAGE_SIZE_OPTIONS = [8, 16, 24, 40];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_WINDOW_MS = 3 * ONE_DAY_MS;
 const RECENT_WINDOW_MS = 7 * ONE_DAY_MS;
+const COPY = {
+  inviteButton: '\u9080\u8bf7\u5b50\u8d26\u53f7',
+  inviteSubmit: '\u53d1\u9001\u9080\u8bf7',
+  inviteAccount: '\u9080\u8bf7\u8d26\u53f7',
+  inviteTitle: '\u8f93\u5165\u5df2\u6ce8\u518c\u7684\u8d26\u53f7\u7528\u6237\u540d',
+  invitePlaceholder: '\u4f8b\u5982\uff1aalex_li',
+  inviteDescription: '\u52a0\u5165\u540e\u5c06\u5171\u4eab\u5f53\u524d\u56e2\u961f\u5de5\u4f5c\u533a\uff0c\u79ef\u5206\u989d\u5ea6\u53ef\u5728\u6210\u5458\u5217\u8868\u4e2d\u5355\u72ec\u8bbe\u7f6e\u3002',
+  inviteRequired: '\u8bf7\u8f93\u5165\u8d26\u53f7\u7528\u6237\u540d',
+  inviteWhitespace: '\u7528\u6237\u540d\u4e0d\u80fd\u5305\u542b\u7a7a\u683c',
+  inviteLength: '\u8d26\u53f7\u683c\u5f0f\uff1a2\u201364 \u4e2a\u5b57\u7b26\uff0c\u4e0d\u80fd\u5305\u542b\u7a7a\u683c',
+  inviteDuplicate: '\u8be5\u8d26\u53f7\u5df2\u7ecf\u5728\u5f53\u524d\u6210\u5458\u5217\u8868\u4e2d',
+  inviteSuccess: '\u9080\u8bf7\u5df2\u53d1\u9001',
+  inviteLoading: '\u6b63\u5728\u9080\u8bf7...',
+  inviteError: '\u9080\u8bf7\u53d1\u9001\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5',
+  inviteClose: '\u5173\u95ed\u9080\u8bf7\u5f39\u7a97',
+  cancel: '\u53d6\u6d88',
+  remove: '\u79fb\u51fa',
+  removeTitle: '\u79fb\u51fa\u5b50\u8d26\u53f7\uff1f',
+  removeDescription: '\u79fb\u51fa\u540e\uff0c\u8be5\u8d26\u53f7\u5c06\u65e0\u6cd5\u7ee7\u7eed\u8bbf\u95ee\u5f53\u524d\u56e2\u961f\uff0c\u4f46\u4e0d\u4f1a\u5220\u9664\u8d26\u53f7\u672c\u8eab\u3002',
+  removeConfirm: '\u786e\u8ba4\u79fb\u51fa',
+  removeLoading: '\u79fb\u51fa\u4e2d...',
+  removeError: '\u79fb\u51fa\u5b50\u8d26\u53f7\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5',
+  removeClose: '\u5173\u95ed\u79fb\u51fa\u786e\u8ba4',
+  removedPrefix: '\u5df2\u5c06',
+  removedSuffix: '\u79fb\u51fa\u56e2\u961f',
+  permissions: '\u8d26\u53f7\u6743\u9650',
+  workspaceAccess: '\u56e2\u961f\u9879\u76ee\u4e0e\u7d20\u6750',
+  accessibleAfterJoin: '\u52a0\u5165\u540e\u53ef\u8bbf\u95ee',
+  pointsQuota: '\u79ef\u5206\u6d88\u8d39\u989d\u5ea6',
+  configurableAfterJoin: '\u52a0\u5165\u540e\u53ef\u8bbe\u7f6e',
+  irreversible: '\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500',
+};
 
 function toDisplayText(value, fallback = '-') {
   const safeText = String(value ?? '').trim();
@@ -158,33 +190,41 @@ function UserManagementPage({
 }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteError, setInviteError] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [inviteUsername, setInviteUsername] = useState('');
-  const [searchKeyword, setSearchKeyword] = useState('');
-  const [onlyShowActive, setOnlyShowActive] = useState(false);
   const [editingMemberId, setEditingMemberId] = useState('');
   const [quotaDraft, setQuotaDraft] = useState('');
   const [quotaUnlimited, setQuotaUnlimited] = useState(false);
   const [quotaSaving, setQuotaSaving] = useState(false);
   const [quotaError, setQuotaError] = useState('');
+  const [removingMemberId, setRemovingMemberId] = useState('');
+  const [removeLoading, setRemoveLoading] = useState(false);
+  const [removeError, setRemoveError] = useState('');
   const activeTeamIdRef = useRef(teamId);
 
   useEffect(() => {
     activeTeamIdRef.current = teamId;
     setPage(1);
     setPageSize(DEFAULT_PAGE_SIZE);
-    setSearchKeyword('');
-    setOnlyShowActive(false);
+    setInviteOpen(false);
+    setInviteUsername('');
+    setInviteLoading(false);
+    setInviteError('');
     setEditingMemberId('');
     setQuotaDraft('');
     setQuotaUnlimited(false);
     setQuotaSaving(false);
     setQuotaError('');
+    setRemovingMemberId('');
+    setRemoveLoading(false);
+    setRemoveError('');
   }, [teamId]);
 
   useEffect(() => {
@@ -239,31 +279,10 @@ function UserManagementPage({
   const remoteTotal =
     Number.isFinite(Number(total)) && Number(total) >= 0 ? Number(total) : members.length;
   const totalPages = Math.max(1, Math.ceil(remoteTotal / pageSize));
-  const normalizedKeyword = searchKeyword.trim().toLowerCase();
-  const hasFilter = Boolean(normalizedKeyword || onlyShowActive);
 
   useEffect(() => {
     setPage((current) => Math.min(current, totalPages));
   }, [totalPages]);
-
-  const filteredMembers = useMemo(
-    () =>
-      members.filter((member) => {
-        const searchableText = [
-          toDisplayText(member?.real_name, ''),
-          toDisplayText(member?.username, ''),
-          toDisplayText(member?.member_role, ''),
-          toDisplayText(member?.user_type, ''),
-        ]
-          .join(' ')
-          .toLowerCase();
-
-        const keywordMatch = !normalizedKeyword || searchableText.includes(normalizedKeyword);
-        const activeMatch = !onlyShowActive || isWithinWindow(member?.last_active_at, ACTIVE_WINDOW_MS);
-        return keywordMatch && activeMatch;
-      }),
-    [members, normalizedKeyword, onlyShowActive],
-  );
 
   const summary = useMemo(() => {
     const ownerCount = members.filter((member) => {
@@ -284,12 +303,19 @@ function UserManagementPage({
     };
   }, [members]);
 
-  const loadingAnnouncement = loading ? '正在同步成员数据...' : `当前显示 ${filteredMembers.length} 名成员`;
+  const loadingAnnouncement = loading ? '正在同步成员数据...' : `当前显示 ${members.length} 名成员`;
   const normalizedMainAvailablePoints = normalizePointsValue(mainAvailablePoints);
   const maxAssignablePoints =
     normalizedMainAvailablePoints == null ? null : Math.floor(normalizedMainAvailablePoints);
   const editingMember = members.find(
     (member) => String(resolveMemberId(member)) === editingMemberId,
+  );
+  const removingMember = members.find(
+    (member) => String(resolveMemberId(member)) === removingMemberId,
+  );
+  const removingMemberName = toDisplayText(
+    removingMember?.real_name ?? removingMember?.username,
+    COPY.inviteAccount,
   );
   const editingMemberQuota = resolveMemberQuota(editingMember);
   const editingMemberPointsUsed = resolveMemberPointsUsed(editingMember);
@@ -300,19 +326,28 @@ function UserManagementPage({
   );
 
   useEffect(() => {
-    if (!editingMemberId) {
+    if (!editingMemberId && !inviteOpen && !removingMemberId) {
       return undefined;
     }
 
     function handleDialogKeyDown(event) {
-      if (event.key !== 'Escape' || quotaSaving) {
+      if (event.key !== 'Escape' || quotaSaving || inviteLoading || removeLoading) {
         return;
       }
 
-      setEditingMemberId('');
-      setQuotaDraft('');
-      setQuotaUnlimited(false);
-      setQuotaError('');
+      if (inviteOpen) {
+        setInviteOpen(false);
+        setInviteUsername('');
+        setInviteError('');
+      } else if (removingMemberId) {
+        setRemovingMemberId('');
+        setRemoveError('');
+      } else {
+        setEditingMemberId('');
+        setQuotaDraft('');
+        setQuotaUnlimited(false);
+        setQuotaError('');
+      }
     }
 
     const previousBodyOverflow = document.body.style.overflow;
@@ -322,7 +357,7 @@ function UserManagementPage({
       document.body.style.overflow = previousBodyOverflow;
       document.removeEventListener('keydown', handleDialogKeyDown);
     };
-  }, [editingMemberId, quotaSaving]);
+  }, [editingMemberId, inviteLoading, inviteOpen, quotaSaving, removeLoading, removingMemberId]);
 
   function handleRefreshMembers() {
     if (!teamId || loading) {
@@ -337,6 +372,26 @@ function UserManagementPage({
     setRefreshNonce((current) => current + 1);
   }
 
+  function openInviteDialog() {
+    if (!teamId || !canInviteMembers) {
+      return;
+    }
+
+    setInviteUsername('');
+    setInviteError('');
+    setInviteOpen(true);
+  }
+
+  function closeInviteDialog() {
+    if (inviteLoading) {
+      return;
+    }
+
+    setInviteOpen(false);
+    setInviteUsername('');
+    setInviteError('');
+  }
+
   async function handleInviteMember(event) {
     event.preventDefault();
 
@@ -346,32 +401,123 @@ function UserManagementPage({
 
     const username = inviteUsername.trim();
     if (!username) {
-      if (typeof onNotify === 'function') {
-        onNotify('请输入要添加的账号', 'warning');
-      }
+      setInviteError(COPY.inviteRequired);
       return;
     }
 
+    if (username.length < 2 || username.length > 64) {
+      setInviteError(COPY.inviteLength);
+      return;
+    }
+
+    if (/\s/.test(username)) {
+      setInviteError(COPY.inviteWhitespace);
+      return;
+    }
+
+    const normalizedUsername = username.toLowerCase();
+    const memberAlreadyExists = members.some(
+      (member) => String(member?.username || '').trim().toLowerCase() === normalizedUsername,
+    );
+    if (memberAlreadyExists) {
+      setInviteError(COPY.inviteDuplicate);
+      return;
+    }
+
+    const requestedTeamId = teamId;
     setInviteLoading(true);
+    setInviteError('');
     try {
       await userApi.inviteTeamMember(teamId, { username });
-      setInviteUsername('');
-      if (typeof onNotify === 'function') {
-        onNotify(`已发送成员邀请：${username}`, 'success');
+      if (activeTeamIdRef.current !== requestedTeamId) {
+        return;
       }
 
+      setErrorMessage('');
+      setInviteOpen(false);
+      setInviteUsername('');
       if (page !== 1) {
         setPage(1);
       } else {
         setRefreshNonce((current) => current + 1);
       }
-    } catch (error) {
-      const message = parseApiErrorMessage(error, '添加成员失败，请稍后重试');
       if (typeof onNotify === 'function') {
-        onNotify(message, 'error');
+        onNotify(`${COPY.inviteSuccess}\uff1a${username}`, 'success');
       }
+    } catch (error) {
+      if (activeTeamIdRef.current !== requestedTeamId) {
+        return;
+      }
+
+      const message = parseApiErrorMessage(error, COPY.inviteError);
+      setInviteError(message);
     } finally {
-      setInviteLoading(false);
+      if (activeTeamIdRef.current === requestedTeamId) {
+        setInviteLoading(false);
+      }
+    }
+  }
+
+  function beginRemoveMember(member) {
+    const memberId = resolveMemberId(member);
+    if (!canInviteMembers || memberId == null || isMainMember(member) || removeLoading) {
+      return;
+    }
+
+    setRemovingMemberId(String(memberId));
+    setRemoveError('');
+  }
+
+  function cancelRemoveMember() {
+    if (removeLoading) {
+      return;
+    }
+
+    setRemovingMemberId('');
+    setRemoveError('');
+  }
+
+  async function handleRemoveMember() {
+    if (!teamId || !removingMember || removeLoading) {
+      return;
+    }
+
+    const memberId = resolveMemberId(removingMember);
+    const memberName = toDisplayText(
+      removingMember?.real_name ?? removingMember?.username,
+      COPY.inviteAccount,
+    );
+    const requestedTeamId = teamId;
+
+    setRemoveLoading(true);
+    setRemoveError('');
+    try {
+      await userApi.removeTeamMember(teamId, memberId);
+      if (activeTeamIdRef.current !== requestedTeamId) {
+        return;
+      }
+
+      setMembers((currentMembers) =>
+        currentMembers.filter(
+          (member) => String(resolveMemberId(member)) !== String(memberId),
+        ),
+      );
+      setTotal((currentTotal) => Math.max(0, (Number(currentTotal) || 0) - 1));
+      setRemovingMemberId('');
+      setRefreshNonce((current) => current + 1);
+      if (typeof onNotify === 'function') {
+        onNotify(`${COPY.removedPrefix} ${memberName} ${COPY.removedSuffix}`, 'success');
+      }
+    } catch (error) {
+      if (activeTeamIdRef.current !== requestedTeamId) {
+        return;
+      }
+
+      setRemoveError(parseApiErrorMessage(error, COPY.removeError));
+    } finally {
+      if (activeTeamIdRef.current === requestedTeamId) {
+        setRemoveLoading(false);
+      }
     }
   }
 
@@ -523,17 +669,25 @@ function UserManagementPage({
                 : '查看成员角色、积分额度和活跃状态；额度仅主账号可修改'}
             </p>
           </div>
-          <div className={styles.headerAction}>
-            <span className={styles.meta}>团队 ID：{teamId || '-'}</span>
-            <button
-              className={styles.secondaryButton}
-              type="button"
-              onClick={handleRefreshMembers}
-              disabled={!teamId || loading}
-            >
-              {loading ? '同步中...' : '刷新成员'}
-            </button>
-          </div>
+          {canInviteMembers && (
+            <div className={styles.headerAction}>
+              <button
+                className={styles.inviteMemberButton}
+                type="button"
+                onClick={openInviteDialog}
+                disabled={!teamId}
+              >
+                <span className={styles.inviteMemberIcon} aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M9.25 11.1a3.35 3.35 0 1 0 0-6.7 3.35 3.35 0 0 0 0 6.7Z" />
+                    <path d="M3.75 18.8c.5-3.05 2.35-4.7 5.5-4.7s5 1.65 5.5 4.7" />
+                    <path d="M18.25 9.5v5.5M15.5 12.25H21" />
+                  </svg>
+                </span>
+                <span className={styles.inviteMemberLabel}>{COPY.inviteButton}</span>
+              </button>
+            </div>
+          )}
         </div>
 
         <div className={styles.summaryGrid}>
@@ -567,55 +721,6 @@ function UserManagementPage({
               本页限额 {summary.pointsConfiguredCount} · 不限额 {summary.unlimitedPointsCount}
             </small>
           </article>
-        </div>
-
-        <div className={styles.toolbar}>
-          {canInviteMembers ? (
-            <form className={styles.inviteForm} onSubmit={handleInviteMember}>
-              <div className={styles.inviteInputRow}>
-                <span className={styles.compactTitle}>邀请账号</span>
-                <input
-                  type="text"
-                  value={inviteUsername}
-                  onChange={(event) => setInviteUsername(event.target.value)}
-                  placeholder="请输入用户名（如：alex_li）"
-                  aria-label="邀请账号输入"
-                  disabled={!teamId || inviteLoading}
-                />
-                <button
-                  className={styles.primaryButton}
-                  type="submit"
-                  disabled={!teamId || inviteLoading || !inviteUsername.trim()}
-                >
-                  {inviteLoading ? '邀请中...' : '添加成员'}
-                </button>
-              </div>
-            </form>
-          ) : null}
-
-          <div className={styles.filterPanel}>
-            <div className={styles.filterRow}>
-              <span className={styles.compactTitle}>筛选成员</span>
-              <input
-                type="search"
-                value={searchKeyword}
-                onChange={(event) => setSearchKeyword(event.target.value)}
-                placeholder="按姓名 / 账号 / 角色筛选"
-                aria-label="筛选成员"
-                disabled={!teamId}
-              />
-              <label className={styles.toggle} htmlFor="active-only-toggle">
-                <input
-                  id="active-only-toggle"
-                  type="checkbox"
-                  checked={onlyShowActive}
-                  onChange={(event) => setOnlyShowActive(event.target.checked)}
-                  disabled={!teamId}
-                />
-                <span>仅看活跃</span>
-              </label>
-            </div>
-          </div>
         </div>
 
         <p className={styles.liveRegion} role="status" aria-live="polite">
@@ -661,7 +766,7 @@ function UserManagementPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredMembers.map((member, index) => {
+                  {members.map((member, index) => {
                     const roleText = toDisplayText(member?.member_role, '未定义');
                     const typeText = toDisplayText(member?.user_type, '未定义');
                     const activity = resolveActivityStatus(member?.last_active_at);
@@ -698,10 +803,18 @@ function UserManagementPage({
                         </td>
                         <td data-label="累计积分额度">
                           {memberIsMain ? (
-                            <div className={`${styles.quotaCell} ${styles.quotaMainCell}`}>
-                              <span className={`${styles.quotaModeBadge} ${styles.quotaModeMain}`}>主账号</span>
-                              <strong>后台统一分配</strong>
-                              <small>不参与子账号额度限制</small>
+                            <div className={styles.quotaCell}>
+                              <div className={styles.quotaValueRow}>
+                                <strong>
+                                  {pointsWalletLoading
+                                    ? '加载中...'
+                                    : `${formatPointsValue(maxAssignablePoints)} 积分`}
+                                </strong>
+                                <span className={`${styles.quotaModeBadge} ${styles.quotaModeMain}`}>主账号</span>
+                              </div>
+                              <div className={styles.quotaStats}>
+                                <span>全部积分</span>
+                              </div>
                             </div>
                           ) : (
                             <div className={styles.quotaCell}>
@@ -744,18 +857,33 @@ function UserManagementPage({
                         </td>
                         <td className={styles.actionCell} data-label="操作">
                           <div className={styles.actionCellInner}>
-                            {memberIsMain || !canManagePointsQuota || memberId == null ? (
+                            {memberIsMain || memberId == null || (!canManagePointsQuota && !canInviteMembers) ? (
                               <span className={styles.actionPlaceholder}>—</span>
                             ) : (
-                              <button
-                                className={`${styles.quotaEditButton} ${isEditingQuota ? styles.quotaEditButtonActive : ''}`}
-                                type="button"
-                                onClick={() => beginQuotaEdit(member)}
-                                disabled={quotaSaving || pointsWalletLoading || maxAssignablePoints == null}
-                                aria-label={`设置 ${toDisplayText(member?.real_name ?? member?.username, '子账号')} 的累计积分额度`}
-                              >
-                                {isEditingQuota ? '正在设置' : '设置额度'}
-                              </button>
+                              <>
+                                {canManagePointsQuota && (
+                                  <button
+                                    className={`${styles.quotaEditButton} ${isEditingQuota ? styles.quotaEditButtonActive : ''}`}
+                                    type="button"
+                                    onClick={() => beginQuotaEdit(member)}
+                                    disabled={quotaSaving || removeLoading || pointsWalletLoading || maxAssignablePoints == null}
+                                    aria-label={`设置 ${toDisplayText(member?.real_name ?? member?.username, '子账号')} 的累计积分额度`}
+                                  >
+                                    {isEditingQuota ? '正在设置' : '设置额度'}
+                                  </button>
+                                )}
+                                {canInviteMembers && (
+                                  <button
+                                    className={styles.removeMemberButton}
+                                    type="button"
+                                    onClick={() => beginRemoveMember(member)}
+                                    disabled={quotaSaving || removeLoading}
+                                    aria-label={`${COPY.remove} ${toDisplayText(member?.real_name ?? member?.username, COPY.inviteAccount)}`}
+                                  >
+                                    {COPY.remove}
+                                  </button>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>
@@ -763,9 +891,9 @@ function UserManagementPage({
                     );
                   })}
 
-                  {!loading && filteredMembers.length === 0 && (
+                  {!loading && members.length === 0 && (
                     <tr className={styles.emptyRow}>
-                      <td colSpan={6}>{hasFilter ? '当前筛选条件下没有匹配成员。' : '当前团队暂无成员数据。'}</td>
+                      <td colSpan={6}>当前团队暂无成员数据。</td>
                     </tr>
                   )}
 
@@ -795,6 +923,198 @@ function UserManagementPage({
           </>
         )}
       </section>
+
+      {inviteOpen && (
+        <div
+          className={styles.memberDialogBackdrop}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeInviteDialog();
+            }
+          }}
+        >
+          <section
+            className={styles.memberDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invite-member-dialog-title"
+            aria-describedby="invite-member-dialog-description"
+          >
+            <div className={styles.memberDialogHeader}>
+              <div className={styles.memberDialogHeading}>
+                <span className={styles.inviteDialogIcon} aria-hidden="true">+</span>
+                <div>
+                  <span className={styles.memberDialogEyebrow}>{COPY.inviteButton}</span>
+                  <h4 id="invite-member-dialog-title">{COPY.inviteTitle}</h4>
+                  <p id="invite-member-dialog-description">{COPY.inviteDescription}</p>
+                </div>
+              </div>
+              <button
+                className={styles.memberDialogClose}
+                type="button"
+                onClick={closeInviteDialog}
+                disabled={inviteLoading}
+                aria-label={COPY.inviteClose}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form className={styles.inviteDialogForm} onSubmit={handleInviteMember}>
+              <div className={styles.inviteField}>
+                <label htmlFor="invite-sub-account-input">{COPY.inviteAccount}</label>
+                <div className={styles.inviteDialogInputWrap}>
+                  <span aria-hidden="true">@</span>
+                  <input
+                    id="invite-sub-account-input"
+                    type="text"
+                    value={inviteUsername}
+                    onChange={(event) => {
+                      setInviteUsername(event.target.value);
+                      setInviteError('');
+                    }}
+                    placeholder={COPY.invitePlaceholder}
+                    autoComplete="off"
+                    autoFocus
+                    disabled={inviteLoading}
+                    aria-invalid={Boolean(inviteError)}
+                    aria-describedby={inviteError ? 'invite-account-error' : 'invite-account-help'}
+                  />
+                </div>
+                {inviteError ? (
+                  <small id="invite-account-error" className={styles.memberDialogError} role="alert">
+                    {inviteError}
+                  </small>
+                ) : (
+                  <small id="invite-account-help" className={styles.inviteFieldHelp}>
+                    {COPY.inviteLength}
+                  </small>
+                )}
+              </div>
+
+              <div className={styles.invitePermissions} aria-label={COPY.permissions}>
+                <div>
+                  <span className={styles.permissionIcon} aria-hidden="true">01</span>
+                  <p>
+                    <strong>{COPY.workspaceAccess}</strong>
+                    <small>{COPY.accessibleAfterJoin}</small>
+                  </p>
+                </div>
+                <div>
+                  <span className={styles.permissionIcon} aria-hidden="true">02</span>
+                  <p>
+                    <strong>{COPY.pointsQuota}</strong>
+                    <small>{COPY.configurableAfterJoin}</small>
+                  </p>
+                </div>
+              </div>
+
+              <div className={styles.memberDialogActions}>
+                <button
+                  className={styles.quotaCancelButton}
+                  type="button"
+                  onClick={closeInviteDialog}
+                  disabled={inviteLoading}
+                >
+                  {COPY.cancel}
+                </button>
+                <button
+                  className={styles.quotaSaveButton}
+                  type="submit"
+                  disabled={inviteLoading || !inviteUsername.trim()}
+                >
+                  {inviteLoading ? COPY.inviteLoading : COPY.inviteSubmit}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {removingMember && (
+        <div
+          className={styles.memberDialogBackdrop}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              cancelRemoveMember();
+            }
+          }}
+        >
+          <section
+            className={`${styles.memberDialog} ${styles.removeDialog}`}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="remove-member-dialog-title"
+            aria-describedby="remove-member-dialog-description"
+          >
+            <div className={styles.memberDialogHeader}>
+              <div className={styles.memberDialogHeading}>
+                <span className={styles.removeDialogIcon} aria-hidden="true">!</span>
+                <div>
+                  <span className={styles.removeDialogEyebrow}>
+                    {COPY.remove}
+                  </span>
+                  <h4 id="remove-member-dialog-title">{COPY.removeTitle}</h4>
+                </div>
+              </div>
+              <button
+                className={styles.memberDialogClose}
+                type="button"
+                onClick={cancelRemoveMember}
+                disabled={removeLoading}
+                aria-label={COPY.removeClose}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className={styles.removeMemberIdentity}>
+              <span aria-hidden="true">{removingMemberName.charAt(0).toUpperCase()}</span>
+              <p>
+                <strong>{removingMemberName}</strong>
+                <small>@{toDisplayText(removingMember?.username, 'unknown')}</small>
+              </p>
+            </div>
+
+            <p id="remove-member-dialog-description" className={styles.removeDialogDescription}>
+              {COPY.removeDescription}
+            </p>
+
+            {removeError && (
+              <small className={styles.memberDialogError} role="alert">
+                {removeError}
+              </small>
+            )}
+
+            <div className={styles.removeDialogNotice}>
+              <span aria-hidden="true">!</span>
+              <small>{COPY.irreversible}</small>
+            </div>
+
+            <div className={styles.memberDialogActions}>
+              <button
+                className={styles.quotaCancelButton}
+                type="button"
+                onClick={cancelRemoveMember}
+                disabled={removeLoading}
+                autoFocus
+              >
+                {COPY.cancel}
+              </button>
+              <button
+                className={styles.removeConfirmButton}
+                type="button"
+                onClick={handleRemoveMember}
+                disabled={removeLoading}
+              >
+                {removeLoading
+                  ? COPY.removeLoading
+                  : COPY.removeConfirm}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {editingMember && (
         <div
