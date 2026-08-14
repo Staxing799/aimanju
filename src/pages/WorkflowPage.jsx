@@ -284,10 +284,12 @@ const CANVAS_HISTORY_TRANSIENT_NODE_FIELDS = new Set([
   'generationRunId',
   'generationStatus',
   'isVideoPlaying',
+  'isVideoMuted',
   'status',
   'videoCurrentTime',
   'videoDuration',
   'videoProgress',
+  'videoVolume',
 ]);
 const CONNECTOR_SIDES = ['left', 'right'];
 const CONNECTOR_PORT_OUTSET = 10;
@@ -9046,6 +9048,87 @@ function WorkflowPage({
     });
   }
 
+  function getCanvasVideoFromControl(event) {
+    return event.currentTarget
+      .closest?.('[data-canvas-video-player="true"]')
+      ?.querySelector?.('video') || null;
+  }
+
+  function toggleCanvasVideoPlayback(event, nodeId) {
+    event.preventDefault();
+    event.stopPropagation();
+    const video = getCanvasVideoFromControl(event);
+    if (!video) {
+      return;
+    }
+    if (video.paused || video.ended) {
+      video.play().catch(() => setVideoPlaying(nodeId, false));
+    } else {
+      video.pause();
+    }
+  }
+
+  function seekCanvasVideo(event, nodeId) {
+    event.stopPropagation();
+    const video = getCanvasVideoFromControl(event);
+    if (!video) {
+      return;
+    }
+    const nextTime = Number(event.currentTarget.value);
+    if (Number.isFinite(nextTime)) {
+      video.currentTime = nextTime;
+      updateVideoProgress(nodeId, video);
+    }
+  }
+
+  function toggleCanvasVideoMuted(event, nodeId) {
+    event.preventDefault();
+    event.stopPropagation();
+    const video = getCanvasVideoFromControl(event);
+    if (!video) {
+      return;
+    }
+    video.muted = !video.muted;
+    updateNode(nodeId, {
+      isVideoMuted: video.muted,
+      videoVolume: video.volume,
+    });
+  }
+
+  function changeCanvasVideoVolume(event, nodeId) {
+    event.stopPropagation();
+    const video = getCanvasVideoFromControl(event);
+    if (!video) {
+      return;
+    }
+    const nextVolume = Math.min(1, Math.max(0, Number(event.currentTarget.value)));
+    video.volume = nextVolume;
+    video.muted = nextVolume === 0;
+    updateNode(nodeId, {
+      isVideoMuted: video.muted,
+      videoVolume: nextVolume,
+    });
+  }
+
+  function toggleCanvasVideoFullscreen(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const player = event.currentTarget.closest?.('[data-canvas-video-player="true"]');
+    const video = player?.querySelector?.('video');
+    if (!player || !video) {
+      return;
+    }
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch?.(() => {});
+      return;
+    }
+    if (player.requestFullscreen) {
+      player.requestFullscreen().catch?.(() => {});
+      return;
+    }
+    video.webkitEnterFullscreen?.();
+  }
+
   function isEditingNodeField(nodeId, field) {
     return editingNodeField?.nodeId === nodeId && editingNodeField?.field === field;
   }
@@ -11637,20 +11720,26 @@ function WorkflowPage({
                         />
                       ) : null}
                       {node.mediaPreviewUrl && nodeMediaType === 'video' ? (
-                        <div className={styles.videoPlayer}>
+                        <div
+                          className={styles.videoPlayer}
+                          data-canvas-video-player="true"
+                        >
                           <video
                             src={node.mediaPreviewUrl}
                             data-disable-native-fullscreen="true"
-                            controls
-                            controlsList="noremoteplayback"
                             disablePictureInPicture
                             disableRemotePlayback
                             preload="metadata"
                             draggable={false}
                             playsInline
+                            tabIndex={-1}
+                            aria-label={`${node.title}视频画面，双击查看详情`}
                             onDoubleClick={preventNativeVideoFullscreen}
                             onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
                             onLoadedMetadata={(event) => updateVideoProgress(node.id, event.currentTarget)}
                             onTimeUpdate={(event) => updateVideoProgress(node.id, event.currentTarget)}
                             onPlay={() => setVideoPlaying(node.id, true)}
@@ -11658,8 +11747,87 @@ function WorkflowPage({
                               setVideoPlaying(node.id, false);
                               updateVideoProgress(node.id, event.currentTarget);
                             }}
+                            onEnded={(event) => {
+                              setVideoPlaying(node.id, false);
+                              updateVideoProgress(node.id, event.currentTarget);
+                            }}
                             onDragStart={(event) => event.preventDefault()}
                           />
+                          <div
+                            className={styles.canvasVideoControls}
+                            data-canvas-ignore="true"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => event.stopPropagation()}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                          >
+                            <button
+                              className={styles.canvasVideoControlButton}
+                              type="button"
+                              aria-label={node.isVideoPlaying ? '暂停视频' : '播放视频'}
+                              title={node.isVideoPlaying ? '暂停' : '播放'}
+                              onClick={(event) => toggleCanvasVideoPlayback(event, node.id)}
+                            >
+                              <span
+                                className={`${styles.canvasVideoPlayGlyph} ${
+                                  node.isVideoPlaying ? styles.canvasVideoPauseGlyph : ''
+                                }`}
+                                aria-hidden="true"
+                              />
+                            </button>
+                            <span className={styles.canvasVideoTime} aria-live="off">
+                              {formatMediaTime(Number(node.videoCurrentTime) || 0)} / {formatMediaTime(Number(node.videoDuration) || 0)}
+                            </span>
+                            <input
+                              className={styles.canvasVideoProgress}
+                              type="range"
+                              min="0"
+                              max={Math.max(Number(node.videoDuration) || 0, 0.01)}
+                              step="0.01"
+                              value={Math.min(
+                                Number(node.videoCurrentTime) || 0,
+                                Math.max(Number(node.videoDuration) || 0, 0.01),
+                              )}
+                              aria-label="视频播放进度"
+                              onChange={(event) => seekCanvasVideo(event, node.id)}
+                            />
+                            <button
+                              className={styles.canvasVideoControlButton}
+                              type="button"
+                              aria-label={node.isVideoMuted ? '取消静音' : '静音'}
+                              title={node.isVideoMuted ? '取消静音' : '静音'}
+                              onClick={(event) => toggleCanvasVideoMuted(event, node.id)}
+                            >
+                              <svg aria-hidden="true" viewBox="0 0 24 24">
+                                <path d="M4 9v6h4l5 4V5L8 9H4Z" />
+                                {node.isVideoMuted ? (
+                                  <path d="m17 9 4 4m0-4-4 4" />
+                                ) : (
+                                  <path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" />
+                                )}
+                              </svg>
+                            </button>
+                            <input
+                              className={styles.canvasVideoVolume}
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={node.isVideoMuted ? 0 : Number(node.videoVolume ?? 1)}
+                              aria-label="视频音量"
+                              onChange={(event) => changeCanvasVideoVolume(event, node.id)}
+                            />
+                            <button
+                              className={styles.canvasVideoControlButton}
+                              type="button"
+                              aria-label="全屏播放"
+                              title="全屏"
+                              onClick={toggleCanvasVideoFullscreen}
+                            >
+                              <svg aria-hidden="true" viewBox="0 0 24 24">
+                                <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                       ) : null}
                       {node.type === 'video' &&
