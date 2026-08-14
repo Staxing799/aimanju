@@ -29,6 +29,11 @@ const QUICK_ADD_NODE_TYPES = [
   // { type: 'audio', label: '音频', icon: '音' },
 ];
 
+const MEDIA_GENERATION_TYPE_OPTIONS = [
+  { type: 'video', label: '视频生成' },
+  { type: 'image', label: '图片生成' },
+];
+
 const GENERATED_MEDIA_NODE_TYPES = ['image', 'audio', 'video'];
 const RESOURCE_CONTAINER_NODE_TYPES = ['upload_image', 'upload_video'];
 const MEDIA_NODE_TYPES = [...GENERATED_MEDIA_NODE_TYPES, ...RESOURCE_CONTAINER_NODE_TYPES];
@@ -311,37 +316,33 @@ const createGroupRunRequestId = () => {
 
 const EMPTY_CANVAS_PRESETS = [
   {
-    id: 'story-script',
-    label: '故事脚本生成',
-    description: '故事梗概 → 完整脚本',
+    id: 'generate-story',
+    label: '生成故事',
+    description: '创建故事节点并打开生成面板',
     sourceType: 'script',
-    targetType: 'script',
-    sourceTitle: '故事梗概',
-    targetTitle: '故事脚本',
+    sourceTitle: '故事生成',
     tone: 'cyan',
   },
   {
-    id: 'reference-image-video',
-    label: '参考图生视频',
-    description: '参考图片 → 视频',
-    sourceType: 'upload_image',
-    targetType: 'video',
-    sourceTitle: '参考图',
-    targetTitle: '参考图视频',
-    targetPortKey: VIDEO_INPUT_ROLE_REFERENCE_IMAGE,
+    id: 'generate-image',
+    label: '生成图片',
+    description: '创建图片节点并打开生成面板',
+    sourceType: 'image',
+    sourceTitle: '图片生成',
     iconType: 'image',
     tone: 'violet',
   },
   {
-    id: 'first-frame-video',
-    label: '首帧图生视频',
-    description: '首帧图片 → 视频',
-    sourceType: 'upload_image',
+    id: 'generate-video',
+    label: '生成视频',
+    description: '创建图片 → 视频生成链路',
+    sourceType: 'image',
     targetType: 'video',
-    sourceTitle: '首帧',
-    targetTitle: '首帧视频',
-    videoInputMode: VIDEO_INPUT_MODE_FIRST_FRAME,
-    iconType: 'image',
+    sourceTitle: '视频首图',
+    targetTitle: '视频生成',
+    targetPortKey: VIDEO_INPUT_ROLE_REFERENCE_IMAGE,
+    focusNode: 'source',
+    iconType: 'video',
     tone: 'amber',
   },
 ];
@@ -427,6 +428,457 @@ function formatPreciseMediaTime(value) {
   const seconds = Math.floor((totalMilliseconds % 60000) / 1000);
   const milliseconds = totalMilliseconds % 1000;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
+}
+
+function normalizeGenerationMeta(value) {
+  const meta = parseJsonObject(value);
+  const references = Array.isArray(meta.references)
+    ? meta.references
+        .map((reference, index) => {
+          const item = reference && typeof reference === 'object' ? reference : {};
+          const url = String(item.url || item.previewUrl || '').trim();
+          const label = String(item.label || item.name || `参考素材 ${index + 1}`).trim();
+          return {
+            id: String(item.id || `${item.type || 'reference'}-${index}`).trim(),
+            type: String(item.type || item.sourceKind || 'reference').trim(),
+            label,
+            url,
+          };
+        })
+        .filter((reference) => reference.url || reference.label)
+    : [];
+  const outputs = Array.isArray(meta.outputs)
+    ? meta.outputs
+        .map((output, index) => {
+          const item = typeof output === 'string' ? { url: output } : output || {};
+          const url = String(
+            item.url ||
+              item.ossUrl ||
+              item.oss_url ||
+              item.outputUrl ||
+              item.output_url ||
+              item.assetUrl ||
+              item.asset_url ||
+              item.imageUrl ||
+              item.image_url ||
+              item.videoUrl ||
+              item.video_url ||
+              '',
+          ).trim();
+          if (!url) {
+            return null;
+          }
+          return {
+            id: String(item.id || `output-${index}`).trim(),
+            url,
+            width: Number(item.width) || 0,
+            height: Number(item.height) || 0,
+            duration: Number(item.duration) || 0,
+            fileSize: Number(item.fileSize ?? item.file_size) || 0,
+            mimeType: String(item.mimeType || item.mime_type || '').trim(),
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  return {
+    runId: String(meta.runId || meta.run_id || '').trim(),
+    requestedAt: String(meta.requestedAt || meta.requested_at || '').trim(),
+    generatedAt: String(
+      meta.generatedAt || meta.generated_at || meta.completedAt || meta.completed_at || '',
+    ).trim(),
+    model: String(meta.model || '').trim(),
+    prompt: String(meta.prompt || meta.content || '').trim(),
+    aspectRatio: String(meta.aspectRatio || meta.aspect_ratio || '').trim(),
+    resolution: String(meta.resolution || '').trim(),
+    durationSeconds: Number(meta.durationSeconds ?? meta.duration_seconds) || 0,
+    references,
+    outputs,
+  };
+}
+
+function formatGenerationDate(value) {
+  const timestamp = Date.parse(String(value || ''));
+  if (!Number.isFinite(timestamp)) {
+    return '暂无记录';
+  }
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(timestamp));
+}
+
+function formatFileSize(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '';
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+const videoDoubleClickFullscreenBlockUntil = new WeakMap();
+
+function markVideoDoubleClickFullscreenBlocked(video) {
+  if (video) {
+    videoDoubleClickFullscreenBlockUntil.set(video, Date.now() + 700);
+  }
+}
+
+function shouldBlockVideoDoubleClickFullscreen(video) {
+  return Boolean(
+    video &&
+      (videoDoubleClickFullscreenBlockUntil.get(video) || 0) > Date.now(),
+  );
+}
+
+function isVideoFullscreen(video) {
+  const fullscreenElement = document.fullscreenElement;
+  return Boolean(
+    video &&
+      (fullscreenElement === video ||
+        fullscreenElement?.contains?.(video) ||
+        video.contains?.(fullscreenElement) ||
+        video.webkitDisplayingFullscreen),
+  );
+}
+
+function exitNativeVideoFullscreen(video) {
+  if (!video || !isVideoFullscreen(video)) {
+    return;
+  }
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.().catch?.(() => {});
+  }
+  if (video.webkitDisplayingFullscreen) {
+    video.webkitExitFullscreen?.();
+  }
+}
+
+function preventNativeVideoFullscreen(event) {
+  const video = event.target?.closest?.('video');
+  if (!video) {
+    return false;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  markVideoDoubleClickFullscreenBlocked(video);
+  exitNativeVideoFullscreen(video);
+  return true;
+}
+
+function MediaDetailViewer({ node, references = [], onClose }) {
+  const closeButtonRef = useRef(null);
+  const viewerRef = useRef(null);
+  const generationMeta = useMemo(
+    () => normalizeGenerationMeta(node?.generationMeta),
+    [node?.generationMeta],
+  );
+  const outputs = useMemo(() => {
+    const normalizedOutputs = [...generationMeta.outputs];
+    const currentUrl = String(node?.mediaPreviewUrl || '').trim();
+    if (currentUrl) {
+      const currentOutputIndex = normalizedOutputs.findIndex(
+        (output) => output.url === currentUrl,
+      );
+      if (currentOutputIndex > 0) {
+        normalizedOutputs.unshift(normalizedOutputs.splice(currentOutputIndex, 1)[0]);
+      } else if (currentOutputIndex < 0) {
+        normalizedOutputs.unshift({
+          id: 'current-output',
+          url: currentUrl,
+          width: 0,
+          height: 0,
+          duration: 0,
+          fileSize: 0,
+          mimeType: '',
+        });
+      }
+    }
+    return normalizedOutputs;
+  }, [generationMeta.outputs, node?.mediaPreviewUrl]);
+  const [selectedOutputIndex, setSelectedOutputIndex] = useState(0);
+  const [mediaMetadata, setMediaMetadata] = useState({
+    url: '',
+    width: 0,
+    height: 0,
+    duration: 0,
+  });
+  const safeSelectedOutputIndex = outputs[selectedOutputIndex] ? selectedOutputIndex : 0;
+  const selectedOutput = outputs[safeSelectedOutputIndex] || outputs[0] || null;
+  const mediaType = getNodeMediaType(node);
+  const isVideo = mediaType === 'video';
+  const isUploadedResource = isResourceContainerNodeType(node?.type);
+  const detailReferences = generationMeta.references.length > 0
+    ? generationMeta.references
+    : references.map((reference, index) => ({
+        id: String(reference.id || `reference-${index}`),
+        type: String(reference.frameRole || reference.sourceKind || 'reference'),
+        label: String(reference.label || `参考素材 ${index + 1}`),
+        url: String(reference.previewUrl || '').trim(),
+      }));
+  const currentMediaMetadata = mediaMetadata.url === selectedOutput?.url
+    ? mediaMetadata
+    : { width: 0, height: 0, duration: 0 };
+  const mediaWidth = currentMediaMetadata.width || selectedOutput?.width || 0;
+  const mediaHeight = currentMediaMetadata.height || selectedOutput?.height || 0;
+  const mediaDuration = currentMediaMetadata.duration || selectedOutput?.duration || 0;
+  const fileSize = formatFileSize(selectedOutput?.fileSize || node?.mediaFileSize);
+  const displayModel = generationMeta.model || node?.model || '';
+  const displayPrompt = generationMeta.prompt || String(node?.content || '').trim();
+  const displayAspectRatio = generationMeta.aspectRatio || node?.aspectRatio || '';
+  const displayResolution = generationMeta.resolution || node?.resolution || '';
+  const displayDuration =
+    generationMeta.durationSeconds || Number(node?.durationSeconds) || mediaDuration;
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeButtonRef.current?.focus();
+
+    function closeFromKeyboard(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key === 'Tab') {
+        const focusableElements = viewerRef.current?.querySelectorAll(
+          'button:not([disabled]), video[controls], [href], [tabindex]:not([tabindex="-1"])',
+        );
+        if (!focusableElements?.length) {
+          return;
+        }
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+        if (event.shiftKey && document.activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        } else if (!event.shiftKey && document.activeElement === lastElement) {
+          event.preventDefault();
+          firstElement.focus();
+        }
+      }
+    }
+
+    window.addEventListener('keydown', closeFromKeyboard);
+    return () => {
+      window.removeEventListener('keydown', closeFromKeyboard);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus?.();
+    };
+  }, [onClose]);
+
+  if (!node || !selectedOutput?.url) {
+    return null;
+  }
+
+  return (
+    <div
+      className={styles.mediaDetailMask}
+      data-canvas-ignore="true"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="media-detail-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        ref={viewerRef}
+        className={styles.mediaDetailViewer}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className={styles.mediaDetailPreviewColumn}>
+          <div
+            className={styles.mediaDetailPreviewStage}
+            onDoubleClickCapture={preventNativeVideoFullscreen}
+          >
+            {isVideo ? (
+              <video
+                key={selectedOutput.url}
+                className="media-detail-main-video"
+                data-disable-native-fullscreen="true"
+                src={selectedOutput.url}
+                controls
+                controlsList="noremoteplayback"
+                disablePictureInPicture
+                disableRemotePlayback
+                autoPlay
+                preload="metadata"
+                playsInline
+                onDoubleClick={preventNativeVideoFullscreen}
+                onLoadedMetadata={(event) => {
+                  const media = event.currentTarget;
+                  setMediaMetadata({
+                    url: selectedOutput.url,
+                    width: media.videoWidth || 0,
+                    height: media.videoHeight || 0,
+                    duration: Number.isFinite(media.duration) ? media.duration : 0,
+                  });
+                }}
+              />
+            ) : (
+              <img
+                key={selectedOutput.url}
+                src={selectedOutput.url}
+                alt={node.mediaFileName || node.title || '图片详情'}
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  setMediaMetadata({
+                    url: selectedOutput.url,
+                    width: image.naturalWidth || 0,
+                    height: image.naturalHeight || 0,
+                    duration: 0,
+                  });
+                }}
+              />
+            )}
+          </div>
+
+          {outputs.length > 1 ? (
+            <div className={styles.mediaDetailOutputList} aria-label="生成结果列表">
+              {outputs.map((output, index) => (
+                <button
+                  key={`${output.id}-${output.url}`}
+                  className={index === safeSelectedOutputIndex ? styles.mediaDetailOutputActive : ''}
+                  type="button"
+                  aria-label={`查看第 ${index + 1} 个生成结果`}
+                  aria-pressed={index === safeSelectedOutputIndex}
+                  onClick={() => setSelectedOutputIndex(index)}
+                >
+                  {isVideo ? (
+                    <video src={output.url} muted preload="metadata" />
+                  ) : (
+                    <img src={output.url} alt="" />
+                  )}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <aside className={styles.mediaDetailInfoPanel}>
+          <header className={styles.mediaDetailHeader}>
+            <div>
+              <strong id="media-detail-title">
+                {isUploadedResource ? '素材信息' : '生成信息'}
+              </strong>
+              <span>{node.title}</span>
+            </div>
+            <button
+              ref={closeButtonRef}
+              type="button"
+              aria-label="关闭详情"
+              onClick={onClose}
+            >
+              ×
+            </button>
+          </header>
+
+          <div className={styles.mediaDetailInfoBody}>
+            {displayModel ? (
+              <div className={styles.mediaDetailField}>
+                <span>模型</span>
+                <strong>{displayModel}</strong>
+              </div>
+            ) : null}
+            {displayAspectRatio ? (
+              <div className={styles.mediaDetailField}>
+                <span>比例</span>
+                <strong>{displayAspectRatio}</strong>
+              </div>
+            ) : null}
+            {displayResolution ? (
+              <div className={styles.mediaDetailField}>
+                <span>分辨率</span>
+                <strong>{displayResolution}</strong>
+              </div>
+            ) : null}
+            {isVideo && displayDuration ? (
+              <div className={styles.mediaDetailField}>
+                <span>时长</span>
+                <strong>{formatMediaTime(displayDuration)}</strong>
+              </div>
+            ) : null}
+
+            {detailReferences.length > 0 ? (
+              <div className={styles.mediaDetailSection}>
+                <span>参考素材（{detailReferences.length}）</span>
+                <div className={styles.mediaDetailReferences}>
+                  {detailReferences.map((reference) => (
+                    <div key={`${reference.id}-${reference.url}`} title={reference.label}>
+                      {reference.url ? (
+                        <img src={reference.url} alt={reference.label} />
+                      ) : (
+                        <span aria-hidden>图</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {displayPrompt ? (
+              <div className={styles.mediaDetailSection}>
+                <span>提示词</span>
+                <p className={styles.mediaDetailPrompt}>{displayPrompt}</p>
+              </div>
+            ) : null}
+
+            {!isUploadedResource ? (
+              <div className={styles.mediaDetailField}>
+                <span>生成时间</span>
+                <strong>{formatGenerationDate(generationMeta.generatedAt)}</strong>
+              </div>
+            ) : null}
+
+            <div className={styles.mediaDetailSection}>
+              <span>{isVideo ? '视频信息' : '图片信息'}</span>
+              <dl className={styles.mediaDetailMetadata}>
+                {mediaWidth && mediaHeight ? (
+                  <div>
+                    <dt>尺寸</dt>
+                    <dd>{mediaWidth} × {mediaHeight}</dd>
+                  </div>
+                ) : null}
+                {fileSize ? (
+                  <div>
+                    <dt>大小</dt>
+                    <dd>{fileSize}</dd>
+                  </div>
+                ) : null}
+                {node.mediaFileName ? (
+                  <div>
+                    <dt>文件名</dt>
+                    <dd title={node.mediaFileName}>{node.mediaFileName}</dd>
+                  </div>
+                ) : null}
+                <div>
+                  <dt>类型</dt>
+                  <dd>{node.mediaMimeType || selectedOutput?.mimeType || (isVideo ? '视频' : '图片')}</dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </div>
+  );
 }
 
 function createDefaultVideoFrameExtractorState() {
@@ -1538,6 +1990,115 @@ function getSeedanceVirtualAssetIds(value) {
   return normalizeSeedanceVirtualAssets(value).map((asset) => asset.virtualAssetId);
 }
 
+function normalizeVideoFrameAsset(value, fallbackRole = '') {
+  const asset = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const url = String(
+    asset.url ??
+      asset.assetUrl ??
+      asset.asset_url ??
+      asset.imageUrl ??
+      asset.image_url ??
+      '',
+  ).trim();
+  if (!url) {
+    return null;
+  }
+
+  return {
+    url,
+    role: String(asset.role || fallbackRole).trim() || fallbackRole,
+    fileName: String(asset.fileName ?? asset.file_name ?? asset.name ?? '').trim(),
+    contentJson: firstObject(asset.contentJson, asset.content_json),
+  };
+}
+
+function getVideoFrameAsset(node, role) {
+  if (!node || node.type !== 'video') {
+    return null;
+  }
+  return normalizeVideoFrameAsset(
+    role === VIDEO_INPUT_ROLE_END_FRAME ? node.endFrameAsset : node.firstFrameAsset,
+    role,
+  );
+}
+
+function getVideoFrameUploadRoles(mode) {
+  return mode === VIDEO_INPUT_MODE_FIRST_END_FRAME
+    ? [VIDEO_INPUT_ROLE_FIRST_FRAME, VIDEO_INPUT_ROLE_END_FRAME]
+    : mode === VIDEO_INPUT_MODE_FIRST_FRAME
+      ? [VIDEO_INPUT_ROLE_FIRST_FRAME]
+      : [];
+}
+
+function getVideoFrameRoleDisplayOrder(role, fallbackIndex = 0) {
+  if (role === VIDEO_INPUT_ROLE_FIRST_FRAME) {
+    return 0;
+  }
+  if (role === VIDEO_INPUT_ROLE_END_FRAME) {
+    return 1;
+  }
+  return fallbackIndex + 2;
+}
+
+function isInternalVideoFrameNode(node) {
+  return Boolean(
+    node &&
+      node.type === 'upload_image' &&
+      node.videoInputTargetNodeId &&
+      [VIDEO_INPUT_ROLE_FIRST_FRAME, VIDEO_INPUT_ROLE_END_FRAME].includes(
+        node.videoInputRole,
+      ),
+  );
+}
+
+function isInternalVideoFrameEdge(edge, nodeMap = {}) {
+  const sourceNode = nodeMap[edge?.from];
+  const targetNode = nodeMap[edge?.to];
+  return Boolean(
+    isInternalVideoFrameNode(sourceNode) ||
+      isInternalVideoFrameNode(targetNode),
+  );
+}
+
+function getInternalVideoFrameNode(
+  nodes = [],
+  videoNodeId,
+  role,
+) {
+  return nodes.find(
+    (node) =>
+      isInternalVideoFrameNode(node) &&
+      node.videoInputTargetNodeId === videoNodeId &&
+      node.videoInputRole === role,
+  ) || null;
+}
+
+function clearVideoFrameAssetState(node, roles = []) {
+  if (!node || node.type !== 'video' || roles.length === 0) {
+    return node;
+  }
+  const roleSet = new Set(roles);
+  const nextParamValuesJson = { ...(node.paramValuesJson || {}) };
+  if (roleSet.has(VIDEO_INPUT_ROLE_FIRST_FRAME)) {
+    ['firstFrameUrl', 'first_frame_url', 'firstFrameAsset', 'first_frame_asset']
+      .forEach((key) => delete nextParamValuesJson[key]);
+  }
+  if (roleSet.has(VIDEO_INPUT_ROLE_END_FRAME)) {
+    ['endFrameUrl', 'end_frame_url', 'endFrameAsset', 'end_frame_asset']
+      .forEach((key) => delete nextParamValuesJson[key]);
+  }
+  return {
+    ...node,
+    paramValuesJson: nextParamValuesJson,
+    ...(roleSet.has(VIDEO_INPUT_ROLE_FIRST_FRAME)
+      ? { firstFrameAsset: null }
+      : {}),
+    ...(roleSet.has(VIDEO_INPUT_ROLE_END_FRAME)
+      ? { endFrameAsset: null }
+      : {}),
+  };
+}
+
 function getNodeInputReferenceThumbnails(node, edges = [], nodeMap = {}, seedanceCharacters = []) {
   if (!node) {
     return [];
@@ -1548,6 +2109,9 @@ function getNodeInputReferenceThumbnails(node, edges = [], nodeMap = {}, seedanc
     .map((edge) => ({ edge, sourceNode: nodeMap[edge.from] }))
     .filter(({ sourceNode }) => {
       const mediaType = getNodeMediaType(sourceNode);
+      if (isInternalVideoFrameNode(sourceNode)) {
+        return Boolean(String(sourceNode.mediaPreviewUrl || '').trim());
+      }
       return mediaType === 'text' || mediaType === 'image' || mediaType === 'video';
     })
     .map(({ edge, sourceNode }) => {
@@ -1565,12 +2129,14 @@ function getNodeInputReferenceThumbnails(node, edges = [], nodeMap = {}, seedanc
               : 'video-empty';
       const sourceTypeLabel =
         sourceMediaType === 'text' ? '文本' : sourceMediaType === 'image' ? '图片' : '视频';
+      const isInternalFrame = isInternalVideoFrameNode(sourceNode);
 
       return {
         id: `connected-${edge.id}`,
-        sourceKind: 'edge',
+        sourceKind: isInternalFrame ? 'internal-frame' : 'edge',
         edgeId: edge.id,
         sourceNodeId: sourceNode.id,
+        frameRole: isInternalFrame ? sourceNode.videoInputRole : '',
         virtualAssetId: String(sourceNode.seedanceVirtualAssetId || '').trim(),
         previewType,
         previewUrl: mediaPreviewUrl,
@@ -1578,7 +2144,11 @@ function getNodeInputReferenceThumbnails(node, edges = [], nodeMap = {}, seedanc
           sourceMediaType === 'text'
             ? String(sourceNode.content || sourceNode.textPromptContent || '').trim()
             : '',
-        label: `连线${sourceTypeLabel}：${sourceNode.title || `${sourceTypeLabel}节点`}`,
+        label: isInternalFrame
+          ? sourceNode.videoInputRole === VIDEO_INPUT_ROLE_END_FRAME
+            ? '已上传尾帧'
+            : '已上传首帧'
+          : `连线${sourceTypeLabel}：${sourceNode.title || `${sourceTypeLabel}节点`}`,
       };
     });
 
@@ -1619,7 +2189,29 @@ function getNodeInputReferenceThumbnails(node, edges = [], nodeMap = {}, seedanc
       };
     });
 
-  return [...connectedNodeReferences, ...virtualCharacterReferences];
+  const directFrameRoles =
+    node.type === 'video' ? getVideoFrameUploadRoles(node.videoInputMode) : [];
+  const internalFrameRoles = new Set(
+    connectedNodeReferences
+      .filter((reference) => reference.sourceKind === 'internal-frame')
+      .map((reference) => reference.frameRole),
+  );
+  const directFrameReferences = node.type === 'video'
+    ? directFrameRoles
+        .filter((role) => !internalFrameRoles.has(role))
+        .map((role) => ({ role, asset: getVideoFrameAsset(node, role) }))
+        .filter(({ asset }) => Boolean(asset))
+        .map(({ role, asset }) => ({
+          id: `direct-${role}`,
+          sourceKind: 'direct-frame',
+          frameRole: role,
+          previewType: 'image',
+          previewUrl: asset.url,
+          label: role === VIDEO_INPUT_ROLE_END_FRAME ? '已上传尾帧' : '已上传首帧',
+        }))
+    : [];
+
+  return [...connectedNodeReferences, ...directFrameReferences, ...virtualCharacterReferences];
 }
 
 function removeCanvasGraphItems(
@@ -1630,6 +2222,14 @@ function removeCanvasGraphItems(
 ) {
   const removedNodeIds =
     nodeIds instanceof Set ? nodeIds : new Set(nodeIds);
+  nodes.forEach((node) => {
+    if (
+      isInternalVideoFrameNode(node) &&
+      removedNodeIds.has(node.videoInputTargetNodeId)
+    ) {
+      removedNodeIds.add(node.id);
+    }
+  });
   const explicitlyRemovedEdgeIds =
     edgeIds instanceof Set ? edgeIds : new Set(edgeIds);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -2797,6 +3397,54 @@ function normalizeGraphNode(rawNode) {
   ].includes(configuredVideoModelCapabilityMode)
     ? configuredVideoModelCapabilityMode
     : '';
+  const firstFrameAsset =
+    normalizeVideoFrameAsset(
+      firstObject(
+        contentJson.firstFrameAsset,
+        contentJson.first_frame_asset,
+        paramValuesJson.firstFrameAsset,
+        paramValuesJson.first_frame_asset,
+        data.firstFrameAsset,
+        data.first_frame_asset,
+      ),
+      VIDEO_INPUT_ROLE_FIRST_FRAME,
+    ) ||
+    normalizeVideoFrameAsset(
+      {
+        url:
+          contentJson.firstFrameUrl ??
+          contentJson.first_frame_url ??
+          paramValuesJson.firstFrameUrl ??
+          paramValuesJson.first_frame_url ??
+          data.firstFrameUrl ??
+          data.first_frame_url,
+      },
+      VIDEO_INPUT_ROLE_FIRST_FRAME,
+    );
+  const endFrameAsset =
+    normalizeVideoFrameAsset(
+      firstObject(
+        contentJson.endFrameAsset,
+        contentJson.end_frame_asset,
+        paramValuesJson.endFrameAsset,
+        paramValuesJson.end_frame_asset,
+        data.endFrameAsset,
+        data.end_frame_asset,
+      ),
+      VIDEO_INPUT_ROLE_END_FRAME,
+    ) ||
+    normalizeVideoFrameAsset(
+      {
+        url:
+          contentJson.endFrameUrl ??
+          contentJson.end_frame_url ??
+          paramValuesJson.endFrameUrl ??
+          paramValuesJson.end_frame_url ??
+          data.endFrameUrl ??
+          data.end_frame_url,
+      },
+      VIDEO_INPUT_ROLE_END_FRAME,
+    );
 
   return {
     id: nodeId,
@@ -2814,6 +3462,8 @@ function normalizeGraphNode(rawNode) {
     modeType,
     videoInputMode,
     videoModelCapabilityMode,
+    firstFrameAsset,
+    endFrameAsset,
     model:
       isResourceContainerNodeType(normalizedType)
         ? ''
@@ -2844,9 +3494,43 @@ function normalizeGraphNode(rawNode) {
         data.seedanceVirtualAssets ??
         data.seedance_virtual_assets,
     ),
+    generationMeta: normalizeGenerationMeta(
+      contentJson.generationMeta ??
+        contentJson.generation_meta ??
+        extraJson.generationMeta ??
+        extraJson.generation_meta ??
+        data.generationMeta ??
+        data.generation_meta,
+    ),
+    pendingGenerationMeta: normalizeGenerationMeta(
+      contentJson.pendingGenerationMeta ??
+        contentJson.pending_generation_meta ??
+        uiJson.pendingGenerationMeta ??
+        uiJson.pending_generation_meta ??
+        data.pendingGenerationMeta ??
+        data.pending_generation_meta,
+    ),
     tags: Array.isArray(contentJson.tags) ? contentJson.tags : Array.isArray(data.tags) ? data.tags : [meta.label],
     mediaPreviewUrl: normalizedMediaPreviewUrl,
     mediaFileName: String(extraJson.mediaFileName ?? data.mediaFileName ?? ''),
+    mediaFileSize:
+      Number(
+        extraJson.mediaFileSize ??
+          extraJson.media_file_size ??
+          contentJson.mediaFileSize ??
+          contentJson.media_file_size ??
+          data.mediaFileSize ??
+          data.media_file_size,
+      ) || 0,
+    mediaMimeType: String(
+      extraJson.mediaMimeType ??
+        extraJson.media_mime_type ??
+        contentJson.mediaMimeType ??
+        contentJson.media_mime_type ??
+        data.mediaMimeType ??
+        data.media_mime_type ??
+        '',
+    ).trim(),
     resourceContentJson: isResourceContainerNodeType(normalizedType) ? { ...contentJson } : {},
     seedanceVirtualAssetId: String(
       extraJson.seedanceVirtualAssetId ??
@@ -2974,6 +3658,13 @@ function getReferenceTargetPortKey(sourceNode) {
 function getEffectiveVideoInputMode(node, edges = [], nodeMap = {}) {
   if (!node || node.type !== 'video') {
     return VIDEO_INPUT_MODE_REFERENCE;
+  }
+
+  if (
+    node.videoInputMode === VIDEO_INPUT_MODE_FIRST_FRAME ||
+    node.videoInputMode === VIDEO_INPUT_MODE_FIRST_END_FRAME
+  ) {
+    return node.videoInputMode;
   }
 
   const incomingEdges = edges.filter((edge) => edge.to === node.id);
@@ -3286,12 +3977,44 @@ function serializeCanvasNode(node, groups = []) {
   const seedanceVirtualAssets = normalizeSeedanceVirtualAssets(node.seedanceVirtualAssets);
   const isResourceContainer = isResourceContainerNodeType(node.type);
   const isMediaPromptNode = isGeneratedMediaNodeType(node.type);
+  const firstFrameAsset = getVideoFrameAsset(node, VIDEO_INPUT_ROLE_FIRST_FRAME);
+  const endFrameAsset = getVideoFrameAsset(node, VIDEO_INPUT_ROLE_END_FRAME);
+  const firstFrameUrl = String(firstFrameAsset?.url || '').trim();
+  const endFrameUrl = String(endFrameAsset?.url || '').trim();
   const videoParamValuesJson = { ...(node.paramValuesJson || {}) };
   delete videoParamValuesJson.mode_type;
   if (node.modeType) {
     videoParamValuesJson.modeType = node.modeType;
   } else {
     delete videoParamValuesJson.modeType;
+  }
+  if (node.type === 'video') {
+    videoParamValuesJson.videoInputMode =
+      node.videoInputMode || VIDEO_INPUT_MODE_REFERENCE;
+    videoParamValuesJson.video_input_mode =
+      node.videoInputMode || VIDEO_INPUT_MODE_REFERENCE;
+  }
+  if (firstFrameUrl) {
+    videoParamValuesJson.firstFrameUrl = firstFrameUrl;
+    videoParamValuesJson.first_frame_url = firstFrameUrl;
+    videoParamValuesJson.firstFrameAsset = firstFrameAsset;
+    videoParamValuesJson.first_frame_asset = firstFrameAsset;
+  } else {
+    delete videoParamValuesJson.firstFrameUrl;
+    delete videoParamValuesJson.first_frame_url;
+    delete videoParamValuesJson.firstFrameAsset;
+    delete videoParamValuesJson.first_frame_asset;
+  }
+  if (endFrameUrl) {
+    videoParamValuesJson.endFrameUrl = endFrameUrl;
+    videoParamValuesJson.end_frame_url = endFrameUrl;
+    videoParamValuesJson.endFrameAsset = endFrameAsset;
+    videoParamValuesJson.end_frame_asset = endFrameAsset;
+  } else {
+    delete videoParamValuesJson.endFrameUrl;
+    delete videoParamValuesJson.end_frame_url;
+    delete videoParamValuesJson.endFrameAsset;
+    delete videoParamValuesJson.end_frame_asset;
   }
   const textPromptContent = String(
     isMediaPromptNode
@@ -3337,8 +4060,34 @@ function serializeCanvasNode(node, groups = []) {
           nodeStatus,
           generationStatus,
           generationRunId,
+          generationMeta: normalizeGenerationMeta(node.generationMeta),
+          pendingGenerationMeta: normalizeGenerationMeta(node.pendingGenerationMeta),
           ...(node.type === 'video' && node.modeType
             ? { modeType: node.modeType }
+            : {}),
+          ...(node.type === 'video'
+            ? {
+                videoInputMode:
+                  node.videoInputMode || VIDEO_INPUT_MODE_REFERENCE,
+                video_input_mode:
+                  node.videoInputMode || VIDEO_INPUT_MODE_REFERENCE,
+                ...(firstFrameAsset
+                  ? {
+                      firstFrameAsset,
+                      first_frame_asset: firstFrameAsset,
+                      firstFrameUrl,
+                      first_frame_url: firstFrameUrl,
+                    }
+                  : {}),
+                ...(endFrameAsset
+                  ? {
+                      endFrameAsset,
+                      end_frame_asset: endFrameAsset,
+                      endFrameUrl,
+                      end_frame_url: endFrameUrl,
+                    }
+                  : {}),
+              }
             : {}),
         },
     ui_json: {
@@ -3346,6 +4095,8 @@ function serializeCanvasNode(node, groups = []) {
       nodeStatus,
       generationStatus,
       generationRunId,
+      generationMeta: normalizeGenerationMeta(node.generationMeta),
+      pendingGenerationMeta: normalizeGenerationMeta(node.pendingGenerationMeta),
       width: node.width,
       height: node.height,
       connectableTargetTypes: Array.isArray(node.connectableTargetTypes) ? node.connectableTargetTypes : [],
@@ -3361,6 +4112,8 @@ function serializeCanvasNode(node, groups = []) {
     extra_json: {
       mediaPreviewUrl: node.mediaPreviewUrl || '',
       mediaFileName: node.mediaFileName || '',
+      mediaFileSize: Number(node.mediaFileSize) || 0,
+      mediaMimeType: node.mediaMimeType || '',
       seedanceVirtualAssets,
       seedanceVirtualAssetId: node.seedanceVirtualAssetId || '',
       seedanceVirtualAssetTargetNodeId: node.seedanceVirtualAssetTargetNodeId || '',
@@ -3377,6 +4130,8 @@ function serializeCanvasNode(node, groups = []) {
       nodeStatus,
       generationStatus,
       generationRunId,
+      generationMeta: normalizeGenerationMeta(node.generationMeta),
+      pendingGenerationMeta: normalizeGenerationMeta(node.pendingGenerationMeta),
       seedanceVirtualAssets,
       seedanceVirtualAssetId: node.seedanceVirtualAssetId || '',
       seedanceVirtualAssetTargetNodeId: node.seedanceVirtualAssetTargetNodeId || '',
@@ -3387,6 +4142,14 @@ function serializeCanvasNode(node, groups = []) {
             modeType: node.modeType || '',
             videoInputMode: node.videoInputMode || VIDEO_INPUT_MODE_REFERENCE,
             videoModelCapabilityMode: node.videoModelCapabilityMode || '',
+            firstFrameAsset,
+            first_frame_asset: firstFrameAsset,
+            firstFrameUrl,
+            first_frame_url: firstFrameUrl,
+            endFrameAsset,
+            end_frame_asset: endFrameAsset,
+            endFrameUrl,
+            end_frame_url: endFrameUrl,
           }
         : {}),
       width: node.width,
@@ -3657,6 +4420,7 @@ function WorkflowPage({
   const [generationFailedNodeIds, setGenerationFailedNodeIds] = useState([]);
   const [isRunningWorkflow, setIsRunningWorkflow] = useState(false);
   const [uploadingNodeIds, setUploadingNodeIds] = useState([]);
+  const [uploadingVideoFrameKeys, setUploadingVideoFrameKeys] = useState([]);
   const [nodePointQuotes, setNodePointQuotes] = useState({});
   const [workflowPointQuote, setWorkflowPointQuote] = useState(createDefaultPointQuote);
   const [pointsTip, setPointsTip] = useState(createDefaultPointsTipState);
@@ -3665,6 +4429,7 @@ function WorkflowPage({
   const [connectionNotice, setConnectionNotice] = useState(null);
   const [seedanceLibraryOpen, setSeedanceLibraryOpen] = useState(false);
   const [seedanceLibraryNodeId, setSeedanceLibraryNodeId] = useState('');
+  const [mediaDetailNodeId, setMediaDetailNodeId] = useState('');
   const [videoFrameExtractor, setVideoFrameExtractor] = useState(
     createDefaultVideoFrameExtractorState,
   );
@@ -3696,6 +4461,7 @@ function WorkflowPage({
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [isMinimapOpen, setIsMinimapOpen] = useState(false);
   const [editingNodeField, setEditingNodeField] = useState(null);
+  const [openMediaGenerationTypeNodeId, setOpenMediaGenerationTypeNodeId] = useState('');
   const [openTextModelNodeId, setOpenTextModelNodeId] = useState('');
   const [openImageModelNodeId, setOpenImageModelNodeId] = useState('');
   const [openImageRatioNodeId, setOpenImageRatioNodeId] = useState('');
@@ -3771,6 +4537,72 @@ function WorkflowPage({
   const selectedEdgeIdRef = useRef(selectedEdgeId);
   const selectedEdgeIdsRef = useRef(selectedEdgeIds);
 
+  const closeMediaDetailViewer = useCallback(() => {
+    setMediaDetailNodeId('');
+  }, []);
+
+  useEffect(() => {
+    const preventManagedVideoMultiClick = (event) => {
+      const video = event.target?.closest?.(
+        'video[data-disable-native-fullscreen="true"]',
+      );
+      if (!video || (event.type !== 'dblclick' && event.detail < 2)) {
+        return;
+      }
+
+      event.preventDefault();
+      markVideoDoubleClickFullscreenBlocked(video);
+      exitNativeVideoFullscreen(video);
+    };
+    const leaveManagedVideoFullscreen = (event) => {
+      const fullscreenElement = document.fullscreenElement;
+      const fullscreenVideo =
+        fullscreenElement?.matches?.('video[data-disable-native-fullscreen="true"]')
+          ? fullscreenElement
+          : fullscreenElement?.querySelector?.(
+              'video[data-disable-native-fullscreen="true"]',
+            );
+      const eventVideo = event?.target?.closest?.(
+        'video[data-disable-native-fullscreen="true"]',
+      );
+      const video = fullscreenVideo || eventVideo;
+      if (video && shouldBlockVideoDoubleClickFullscreen(video)) {
+        event?.preventDefault?.();
+        exitNativeVideoFullscreen(video);
+      }
+    };
+
+    document.addEventListener('mousedown', preventManagedVideoMultiClick, true);
+    document.addEventListener('click', preventManagedVideoMultiClick, true);
+    document.addEventListener('dblclick', preventManagedVideoMultiClick, true);
+    document.addEventListener('fullscreenchange', leaveManagedVideoFullscreen);
+    document.addEventListener(
+      'webkitfullscreenchange',
+      leaveManagedVideoFullscreen,
+    );
+    document.addEventListener(
+      'webkitbeginfullscreen',
+      leaveManagedVideoFullscreen,
+      true,
+    );
+
+    return () => {
+      document.removeEventListener('mousedown', preventManagedVideoMultiClick, true);
+      document.removeEventListener('click', preventManagedVideoMultiClick, true);
+      document.removeEventListener('dblclick', preventManagedVideoMultiClick, true);
+      document.removeEventListener('fullscreenchange', leaveManagedVideoFullscreen);
+      document.removeEventListener(
+        'webkitfullscreenchange',
+        leaveManagedVideoFullscreen,
+      );
+      document.removeEventListener(
+        'webkitbeginfullscreen',
+        leaveManagedVideoFullscreen,
+        true,
+      );
+    };
+  }, []);
+
   const zoomAt = useCallback((clientX, clientY, delta) => {
     const rect = viewportRef.current?.getBoundingClientRect();
     const viewportPoint = {
@@ -3794,22 +4626,45 @@ function WorkflowPage({
     () => nodes.reduce((map, node) => ({ ...map, [node.id]: node }), {}),
     [nodes],
   );
+  const mediaDetailNode = mediaDetailNodeId
+    ? nodeMap[mediaDetailNodeId] || null
+    : null;
+  const mediaDetailReferences = useMemo(
+    () =>
+      mediaDetailNode
+        ? getNodeInputReferenceThumbnails(
+            mediaDetailNode,
+            edges,
+            nodeMap,
+            seedanceCharacters,
+          )
+        : [],
+    [edges, mediaDetailNode, nodeMap, seedanceCharacters],
+  );
+  const visibleNodes = useMemo(
+    () => nodes.filter((node) => !isInternalVideoFrameNode(node)),
+    [nodes],
+  );
+  const visibleEdges = useMemo(
+    () => edges.filter((edge) => !isInternalVideoFrameEdge(edge, nodeMap)),
+    [edges, nodeMap],
+  );
   const videoFrameExtractorNode = videoFrameExtractor.nodeId
     ? nodeMap[videoFrameExtractor.nodeId] || null
     : null;
   const hasVideoVirtualAssetReferences = nodes.some(
     (node) => node.type === 'video' && getSeedanceVirtualAssetIds(node.seedanceVirtualAssets).length > 0,
   );
-  const runningNodeCount = nodes.filter((node) => isActiveGenerationStatus(node.status)).length;
+  const runningNodeCount = visibleNodes.filter((node) => isActiveGenerationStatus(node.status)).length;
   const zoomPercent = Math.round(viewport.zoom * 100);
-  const nodeBounds = useMemo(() => getNodesBounds(nodes), [nodes]);
+  const nodeBounds = useMemo(() => getNodesBounds(visibleNodes), [visibleNodes]);
   const viewportWorldRect = useMemo(
     () => getViewportWorldRect(viewport, viewportSize),
     [viewport, viewportSize],
   );
   const minimapLayout = useMemo(
-    () => buildMinimapLayout(nodes, nodeBounds, viewportWorldRect),
-    [nodes, nodeBounds, viewportWorldRect],
+    () => buildMinimapLayout(visibleNodes, nodeBounds, viewportWorldRect),
+    [visibleNodes, nodeBounds, viewportWorldRect],
   );
   const shouldShowReturnToRange = Boolean(
     nodeBounds && viewportWorldRect && !doRectsIntersect(nodeBounds, viewportWorldRect),
@@ -3840,13 +4695,13 @@ function WorkflowPage({
   const elevatedCanvasEdges = useMemo(
     () =>
       elevatedCanvasNodeIds.size > 0
-        ? edges.filter(
+        ? visibleEdges.filter(
             (edge) =>
               elevatedCanvasNodeIds.has(edge.from) ||
               elevatedCanvasNodeIds.has(edge.to),
           )
         : [],
-    [edges, elevatedCanvasNodeIds],
+    [elevatedCanvasNodeIds, visibleEdges],
   );
   const isFocusedGroupRunning = focusedGroupNodes.some(
     (node) =>
@@ -4167,101 +5022,45 @@ function WorkflowPage({
     return null;
   }
 
-  function getImageResourceNodeWorldPoint(videoNode, reusableNodeId = '', reservedNodes = []) {
-    const imageSize = getDefaultNodeSize('upload_image');
-    const gap = 96;
-    const centerX = videoNode.x - gap - imageSize.width / 2;
-    const centerY = videoNode.y + videoNode.height / 2;
-    const verticalStep = imageSize.height + 36;
-    const offsets = [0, 1, -1, 2, -2, 3, -3];
-    const otherNodes = [
-      ...nodesRef.current.filter(
-        (node) => node.id !== videoNode.id && node.id !== reusableNodeId,
-      ),
-      ...reservedNodes,
-    ];
-
-    const availableOffset = offsets.find((offset) => {
-      const candidate = {
-        left: centerX - imageSize.width / 2,
-        top: centerY + offset * verticalStep - imageSize.height / 2,
-        right: centerX + imageSize.width / 2,
-        bottom: centerY + offset * verticalStep + imageSize.height / 2,
-      };
-
-      return !otherNodes.some((node) => (
-        candidate.left < node.x + node.width + 24 &&
-        candidate.right > node.x - 24 &&
-        candidate.top < node.y + node.height + 24 &&
-        candidate.bottom > node.y - 24
-      ));
-    }) ?? 0;
-
-    return {
-      x: centerX,
-      y: centerY + availableOffset * verticalStep,
-    };
-  }
-
-  function getStructuredVideoResourceWorldPoints(
-    videoNode,
-    total,
-    ignoredNodeIds = new Set(),
-  ) {
-    const imageSize = getDefaultNodeSize('upload_image');
-    const horizontalGap = 48;
-    const verticalGap = 32;
-    const stackHeight =
-      total * imageSize.height + Math.max(0, total - 1) * verticalGap;
-    const baseLeft = videoNode.x - horizontalGap - imageSize.width;
-    const baseTop = videoNode.y + videoNode.height / 2 - stackHeight / 2;
-    const verticalStep = stackHeight + 24;
-    const horizontalStep = imageSize.width + 24;
-    const candidateOffsets = [
-      [0, 0],
-      [0, 1],
-      [0, -1],
-      [1, 0],
-      [1, 1],
-      [1, -1],
-      [0, 2],
-      [0, -2],
-      [2, 0],
-    ];
-    const blockingNodes = nodesRef.current.filter(
-      (node) =>
-        node.id !== videoNode.id &&
-        !ignoredNodeIds.has(node.id),
-    );
-    const availableOffset =
-      candidateOffsets.find(([horizontalOffset, verticalOffset]) => {
-        const left = baseLeft - horizontalOffset * horizontalStep;
-        const top = baseTop + verticalOffset * verticalStep;
-        const candidate = {
-          left,
-          top,
-          right: left + imageSize.width,
-          bottom: top + stackHeight,
-        };
-        return !blockingNodes.some(
+  function removeInternalVideoFrameRoles(videoNodeId, roles) {
+    const roleSet = new Set(roles);
+    if (!videoNodeId || roleSet.size === 0) {
+      return false;
+    }
+    const internalNodeIds = new Set(
+      nodesRef.current
+        .filter(
           (node) =>
-            candidate.left < node.x + node.width + 16 &&
-            candidate.right > node.x - 16 &&
-            candidate.top < node.y + node.height + 16 &&
-            candidate.bottom > node.y - 16,
-        );
-      }) || [0, 0];
-    const [horizontalOffset, verticalOffset] = availableOffset;
-    const stackLeft = baseLeft - horizontalOffset * horizontalStep;
-    const stackTop = baseTop + verticalOffset * verticalStep;
-
-    return Array.from({ length: total }, (_, index) => ({
-      x: stackLeft + imageSize.width / 2,
-      y:
-        stackTop +
-        index * (imageSize.height + verticalGap) +
-        imageSize.height / 2,
-    }));
+            isInternalVideoFrameNode(node) &&
+            node.videoInputTargetNodeId === videoNodeId &&
+            roleSet.has(node.videoInputRole),
+        )
+        .map((node) => node.id),
+    );
+    const nextGraph = removeCanvasGraphItems(
+      nodesRef.current,
+      edgesRef.current,
+      internalNodeIds,
+      [],
+    );
+    const nextNodes = nextGraph.nodes.map((node) =>
+      node.id === videoNodeId
+        ? clearVideoFrameAssetState(node, [...roleSet])
+        : node,
+    );
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextGraph.edges;
+    setNodes(nextNodes);
+    setEdges(nextGraph.edges);
+    if (internalNodeIds.size > 0) {
+      setUploadingNodeIds((current) =>
+        current.filter((nodeId) => !internalNodeIds.has(nodeId)),
+      );
+      setHoveredEdgeId('');
+      setSelectedEdgeId('');
+      setSelectedEdgeIds([]);
+    }
+    return internalNodeIds.size > 0;
   }
 
   function getExtractedFrameNodeWorldPoint(videoNode) {
@@ -4320,141 +5119,66 @@ function WorkflowPage({
       );
       return;
     }
-
-    const previousStructuredInputNodeIds = new Set(
-      edgesRef.current
-        .filter((edge) => edge.to === videoNodeId)
-        .map((edge) => nodesRef.current.find((node) => node.id === edge.from))
+    const allowedRoles = new Set(getVideoFrameUploadRoles(mode));
+    const obsoleteInternalNodeIds = new Set(
+      nodesRef.current
         .filter(
           (node) =>
-            node &&
+            isInternalVideoFrameNode(node) &&
             node.videoInputTargetNodeId === videoNodeId &&
-            [VIDEO_INPUT_ROLE_FIRST_FRAME, VIDEO_INPUT_ROLE_END_FRAME].includes(
-              node.videoInputRole,
-            ),
+            !allowedRoles.has(node.videoInputRole),
         )
         .map((node) => node.id),
     );
-    const roles =
-      mode === VIDEO_INPUT_MODE_FIRST_END_FRAME
-        ? [VIDEO_INPUT_ROLE_FIRST_FRAME, VIDEO_INPUT_ROLE_END_FRAME]
-        : [VIDEO_INPUT_ROLE_FIRST_FRAME];
-    const roleNodeWorldPoints = getStructuredVideoResourceWorldPoints(
-      videoNode,
-      roles.length,
-      previousStructuredInputNodeIds,
-    );
-    const roleNodes = roles.map((role, index) => {
-      const roleTitle =
-        role === VIDEO_INPUT_ROLE_END_FRAME ? '尾帧' : '首帧';
-      const nextResourceNode = buildNewNode('upload_image', {
-        worldPoint: roleNodeWorldPoints[index],
-        title: roleTitle,
-        videoInputRole: role,
-        videoInputTargetNodeId: videoNodeId,
-      });
-      return nextResourceNode;
-    });
-    const previousGroupId = videoNode.groupId || '';
-    groupSequenceRef.current += 1;
-    const nextGroupId = `group-${Date.now()}-${groupSequenceRef.current}`;
-    const groupedRoleNodes = roleNodes.map((node) => ({
-      ...node,
-      groupId: nextGroupId,
-    }));
-    const nextGroupRegion = getNodeSelectionRegion(
-      [videoNode, ...groupedRoleNodes],
-      GROUP_CONTENT_PADDING,
-    );
-    const nextGroup = {
-      id: nextGroupId,
-      title:
-        mode === VIDEO_INPUT_MODE_FIRST_END_FRAME ? '首尾帧组' : '首帧组',
-      x: Math.round(nextGroupRegion.left),
-      y: Math.round(nextGroupRegion.top),
-      width: Math.max(
-        GROUP_MIN_WIDTH,
-        Math.round(nextGroupRegion.right - nextGroupRegion.left),
-      ),
-      height: Math.max(
-        GROUP_MIN_HEIGHT,
-        Math.round(nextGroupRegion.bottom - nextGroupRegion.top),
-      ),
-    };
-    const nextNodes = nodesRef.current
-      .map((node) => {
-        if (node.id === videoNodeId) {
-          return {
-            ...node,
-            ...getVideoModelSelectionPatch(node, nextModeModel),
-            groupId: nextGroupId,
-            modeType:
-              mode === VIDEO_INPUT_MODE_FIRST_END_FRAME
-                ? VIDEO_INPUT_MODE_FIRST_END_FRAME
-                : '',
-            videoInputMode: mode,
-            videoModelCapabilityMode: mode,
-            seedanceVirtualAssets: [],
-          };
-        }
-        if (previousStructuredInputNodeIds.has(node.id)) {
-          return {
-            ...node,
-            groupId: '',
-            videoInputRole: '',
-            videoInputTargetNodeId: '',
-          };
-        }
-        if (previousGroupId && node.groupId === previousGroupId) {
-          return {
-            ...node,
-            groupId: '',
-          };
-        }
-        return node;
-      });
-    nextNodes.push(...groupedRoleNodes);
-    const nextGroups = [
-      ...groupsRef.current.filter((group) => group.id !== previousGroupId),
-      nextGroup,
-    ];
-
     const removedInputEdgeIds = new Set(
       edgesRef.current
-        .filter((edge) => edge.to === videoNodeId)
+        .filter(
+          (edge) =>
+            edge.to === videoNodeId &&
+            (!isInternalVideoFrameNode(
+              nodesRef.current.find((node) => node.id === edge.from),
+            ) || obsoleteInternalNodeIds.has(edge.from)),
+        )
         .map((edge) => edge.id),
     );
-    const nextEdges = edgesRef.current.filter((edge) => edge.to !== videoNodeId);
-    groupedRoleNodes.forEach((roleNode, index) => {
-      edgeSequenceRef.current += 1;
-      nextEdges.push({
-        id: `edge-${roleNode.id}-${videoNodeId}-${edgeSequenceRef.current}`,
-        ...normalizeCanvasEdgePorts({
-          from: roleNode.id,
-          to: videoNodeId,
-          sourcePortKey: 'output',
-          targetPortKey: roles[index],
-          sortOrder: index,
-        }),
-      });
-    });
-
-    nodesRef.current = nextNodes;
-    edgesRef.current = nextEdges;
-    groupsRef.current = nextGroups;
-    setNodes(nextNodes);
-    setEdges(nextEdges);
-    setGroups(nextGroups);
-    if (previousGroupId) {
-      groupExecutionIdsRef.current.delete(previousGroupId);
-      setSubmittingGroupIds((current) =>
-        current.filter((groupId) => groupId !== previousGroupId),
+    const nextGraph = removeCanvasGraphItems(
+      nodesRef.current,
+      edgesRef.current,
+      obsoleteInternalNodeIds,
+      removedInputEdgeIds,
+    );
+    const nextNodes = nextGraph.nodes.map((node) => {
+      if (node.id !== videoNodeId) {
+        return node;
+      }
+      const clearedNode = clearVideoFrameAssetState(
+        node,
+        mode === VIDEO_INPUT_MODE_FIRST_FRAME
+          ? [VIDEO_INPUT_ROLE_END_FRAME]
+          : [],
       );
-    }
-    setDraggingGroupId('');
-    setGroupDropTargetId('');
-    setHoveredEdgeId((current) => (removedInputEdgeIds.has(current) ? '' : current));
-    setSelectedEdgeId((current) => (removedInputEdgeIds.has(current) ? '' : current));
+      return {
+        ...clearedNode,
+        ...getVideoModelSelectionPatch(clearedNode, nextModeModel),
+        modeType:
+          mode === VIDEO_INPUT_MODE_FIRST_END_FRAME
+            ? VIDEO_INPUT_MODE_FIRST_END_FRAME
+            : '',
+        videoInputMode: mode,
+        videoModelCapabilityMode: mode,
+        seedanceVirtualAssets: [],
+      };
+    });
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextGraph.edges;
+    setNodes(nextNodes);
+    setEdges(nextGraph.edges);
+    setHoveredEdgeId((current) =>
+      removedInputEdgeIds.has(current) ? '' : current,
+    );
+    setSelectedEdgeId((current) =>
+      removedInputEdgeIds.has(current) ? '' : current,
+    );
     setSelectedEdgeIds((current) =>
       current.filter((edgeId) => !removedInputEdgeIds.has(edgeId)),
     );
@@ -4471,66 +5195,51 @@ function WorkflowPage({
       return false;
     }
 
-    let targetGroupId = String(videoNode.groupId || '').trim();
-    if (!targetGroupId) {
-      groupSequenceRef.current += 1;
-      targetGroupId = `group-${Date.now()}-${groupSequenceRef.current}`;
-    }
-    const reusableImageNode = nodesRef.current.find(
-      (node) =>
-        ['image', 'upload_image'].includes(node.type) &&
-        node.seedanceVirtualAssetTargetNodeId === videoNodeId,
+    const legacyResourceNodeIds = new Set(
+      nodesRef.current
+        .filter(
+          (node) =>
+            ['image', 'upload_image'].includes(node.type) &&
+            node.seedanceVirtualAssetTargetNodeId === videoNodeId,
+        )
+        .map((node) => node.id),
     );
-    const imageUrl = String(character?.imageUrl || '').trim();
-    const imageName = String(character?.name || '').trim() || '虚拟人像';
-    const imageNode = reusableImageNode
-      ? {
-          ...reusableImageNode,
-          type: 'upload_image',
-          title: imageName,
-          model: '',
-          mediaPreviewUrl: imageUrl,
-          mediaFileName: imageName,
-          resourceContentJson: {
-            type: 'image',
-            url: imageUrl ? [imageUrl] : [],
-            action: 'image_resource',
-            output: {
-              url: imageUrl,
-              source: 'virtual_asset',
-              virtual_asset_id: virtualAssetId,
-            },
-          },
-          seedanceVirtualAssetId: virtualAssetId,
-          seedanceVirtualAssetTargetNodeId: videoNodeId,
-          groupId: targetGroupId,
-        }
-      : buildNewNode('upload_image', {
-          worldPoint: getImageResourceNodeWorldPoint(videoNode),
-          title: imageName,
-          mediaPreviewUrl: imageUrl,
-          mediaFileName: imageName,
-          status: 'success',
-          resourceContentJson: {
-            type: 'image',
-            url: imageUrl ? [imageUrl] : [],
-            action: 'image_resource',
-            output: {
-              url: imageUrl,
-              source: 'virtual_asset',
-              virtual_asset_id: virtualAssetId,
-            },
-          },
-          seedanceVirtualAssetId: virtualAssetId,
-          seedanceVirtualAssetTargetNodeId: videoNodeId,
-          groupId: targetGroupId,
-        });
-
-    const nextNodes = nodesRef.current.map((node) => {
+    const legacyGroupIds = new Set(
+      nodesRef.current
+        .filter((node) => legacyResourceNodeIds.has(node.id) && node.groupId)
+        .map((node) => node.groupId),
+    );
+    const removableLegacyGroupIds = new Set(
+      [...legacyGroupIds].filter((groupId) => {
+        const group = groupsRef.current.find(
+          (currentGroup) => currentGroup.id === groupId,
+        );
+        const groupNodes = nodesRef.current.filter(
+          (node) => node.groupId === groupId,
+        );
+        return (
+          group?.title === '角色参考组' &&
+          groupNodes.length > 0 &&
+          groupNodes.every(
+            (node) =>
+              node.id === videoNodeId || legacyResourceNodeIds.has(node.id),
+          )
+        );
+      }),
+    );
+    const cleanedGraph = removeCanvasGraphItems(
+      nodesRef.current,
+      edgesRef.current,
+      legacyResourceNodeIds,
+      [],
+    );
+    const nextNodes = cleanedGraph.nodes.map((node) => {
       if (node.id === videoNodeId) {
         return {
           ...node,
-          groupId: targetGroupId,
+          groupId: removableLegacyGroupIds.has(node.groupId)
+            ? ''
+            : node.groupId,
           modeType: '',
           videoInputMode: VIDEO_INPUT_MODE_REFERENCE,
           videoModelCapabilityMode:
@@ -4543,92 +5252,17 @@ function WorkflowPage({
           ],
         };
       }
-      if (node.id === imageNode.id) {
-        return imageNode;
-      }
       return node;
     });
-    if (!reusableImageNode) {
-      nextNodes.push(imageNode);
-    }
-    const groupedVideoNode =
-      nextNodes.find((node) => node.id === videoNodeId) || videoNode;
-    const existingTargetGroup = groupsRef.current.find(
-      (group) => group.id === targetGroupId,
+    const nextGroups = groupsRef.current.filter(
+      (group) => !removableLegacyGroupIds.has(group.id),
     );
-    let nextGroups = groupsRef.current;
-    if (existingTargetGroup) {
-      nextGroups = groupsRef.current.map((group) =>
-        group.id === targetGroupId
-          ? expandGroupToContainNodes(group, [imageNode])
-          : group,
-      );
-    } else {
-      const groupRegion = getNodeSelectionRegion(
-        [groupedVideoNode, imageNode],
-        GROUP_CONTENT_PADDING,
-      );
-      nextGroups = [
-        ...groupsRef.current,
-        {
-          id: targetGroupId,
-          title: '角色参考组',
-          x: Math.round(groupRegion.left),
-          y: Math.round(groupRegion.top),
-          width: Math.max(
-            GROUP_MIN_WIDTH,
-            Math.round(groupRegion.right - groupRegion.left),
-          ),
-          height: Math.max(
-            GROUP_MIN_HEIGHT,
-            Math.round(groupRegion.bottom - groupRegion.top),
-          ),
-        },
-      ];
-    }
-
-    let nextEdges = edgesRef.current;
-    if (!hasConnectionBetween(nextEdges, imageNode.id, videoNodeId)) {
-      edgeSequenceRef.current += 1;
-      nextEdges = [
-        ...nextEdges,
-        {
-          id: `edge-${imageNode.id}-${videoNodeId}-${edgeSequenceRef.current}`,
-          ...normalizeCanvasEdgePorts({
-            from: imageNode.id,
-            to: videoNodeId,
-            sourcePortKey: 'output',
-            targetPortKey: VIDEO_INPUT_ROLE_REFERENCE_IMAGE,
-          }),
-        },
-      ];
-    }
-    const nextNodeMap = nextNodes.reduce(
-      (map, node) => ({ ...map, [node.id]: node }),
-      {},
-    );
-    let referenceOrder = 0;
-    nextEdges = nextEdges.map((edge) => {
-      if (edge.to !== videoNodeId) {
-        return edge;
-      }
-      const normalizedEdge = {
-        ...edge,
-        sourcePortKey:
-          edge.sourcePortKey ||
-          (isResourceContainerNodeType(nextNodeMap[edge.from]?.type) ? 'output' : ''),
-        targetPortKey: getReferenceTargetPortKey(nextNodeMap[edge.from]),
-        sortOrder: referenceOrder,
-      };
-      referenceOrder += 1;
-      return normalizedEdge;
-    });
 
     nodesRef.current = nextNodes;
-    edgesRef.current = nextEdges;
+    edgesRef.current = cleanedGraph.edges;
     groupsRef.current = nextGroups;
     setNodes(nextNodes);
-    setEdges(nextEdges);
+    setEdges(cleanedGraph.edges);
     setGroups(nextGroups);
     return true;
   }
@@ -4696,6 +5330,10 @@ function WorkflowPage({
       showNoticeAtEvent(event, '暂无支持虚拟人像库的可用模型');
       return;
     }
+    removeInternalVideoFrameRoles(nodeId, [
+      VIDEO_INPUT_ROLE_FIRST_FRAME,
+      VIDEO_INPUT_ROLE_END_FRAME,
+    ]);
     const nextNodes = nodesRef.current.map((node) =>
       node.id === nodeId
         ? {
@@ -4828,7 +5466,7 @@ function WorkflowPage({
   }
 
   function getWorkflowPointsCandidateNodes() {
-    return nodes.filter((node) => POINTS_QUOTE_NODE_TYPES.includes(node.type) && getNodePrompt(node));
+    return visibleNodes.filter((node) => POINTS_QUOTE_NODE_TYPES.includes(node.type) && getNodePrompt(node));
   }
 
   function getNodePointsQuoteText(nodeId) {
@@ -5007,7 +5645,7 @@ function WorkflowPage({
 
   const pointsQuoteSpecs = useMemo(
     () =>
-      nodes
+      visibleNodes
         .map((node) => {
           const selectedModel = getSelectedModelOption(node.type, node.model, modelOptionsByNodeType);
           const modelId = selectedModel?.modelId || null;
@@ -5016,7 +5654,7 @@ function WorkflowPage({
           }
 
           const params = {
-            ...getNodeGenerateParams(node),
+            ...getNodeGenerateParams(node, edges, nodes),
             node_type: node.type,
             nodeType: node.type,
             count: 1,
@@ -5031,7 +5669,7 @@ function WorkflowPage({
           };
         })
         .filter(Boolean),
-    [modelOptionsByNodeType, nodes],
+    [edges, modelOptionsByNodeType, nodes, visibleNodes],
   );
   const pointsQuoteSignature = useMemo(
     () =>
@@ -5310,7 +5948,7 @@ function WorkflowPage({
         const viewportRect = viewportRef.current?.getBoundingClientRect();
         setViewport(
           getFittedViewportForNodes(
-            nextNodes,
+            nextNodes.filter((node) => !isInternalVideoFrameNode(node)),
             viewportRect?.width || viewportSize.width || window.innerWidth,
             viewportRect?.height || viewportSize.height || window.innerHeight,
           ),
@@ -5507,11 +6145,65 @@ function WorkflowPage({
   }, [edges, groups, isGraphReady, nodes]);
 
   useEffect(() => {
-    if (isGraphReady && nodes.length === 0 && groups.length > 0) {
+    if (isGraphReady && visibleNodes.length === 0 && groups.length > 0) {
       setGroups([]);
       setFocusedGroupId('');
     }
-  }, [groups.length, isGraphReady, nodes.length]);
+  }, [groups.length, isGraphReady, visibleNodes.length]);
+
+  useEffect(() => {
+    if (!isGraphReady) {
+      return;
+    }
+    const uploadingKeys = new Set(uploadingVideoFrameKeys);
+    const staleInternalNodes = nodes.filter((node) => {
+      if (!isInternalVideoFrameNode(node)) {
+        return false;
+      }
+      const targetVideoNode = nodeMap[node.videoInputTargetNodeId];
+      const allowedRoles = getVideoFrameUploadRoles(
+        targetVideoNode?.videoInputMode,
+      );
+      const isUploading = uploadingKeys.has(
+        `${node.videoInputTargetNodeId}:${node.videoInputRole}`,
+      );
+      const hasBindingEdge = edges.some(
+        (edge) =>
+          edge.from === node.id &&
+          edge.to === node.videoInputTargetNodeId &&
+          edge.targetPortKey === node.videoInputRole,
+      );
+      return (
+        targetVideoNode?.type !== 'video' ||
+        !allowedRoles.includes(node.videoInputRole) ||
+        ((!node.mediaPreviewUrl || !hasBindingEdge) && !isUploading)
+      );
+    });
+    if (staleInternalNodes.length === 0) {
+      return;
+    }
+    const staleNodeIds = new Set(staleInternalNodes.map((node) => node.id));
+    const clearedRolesByVideoId = staleInternalNodes.reduce((map, node) => {
+      const roles = map.get(node.videoInputTargetNodeId) || new Set();
+      roles.add(node.videoInputRole);
+      map.set(node.videoInputTargetNodeId, roles);
+      return map;
+    }, new Map());
+    const nextGraph = removeCanvasGraphItems(
+      nodes,
+      edges,
+      staleNodeIds,
+      [],
+    );
+    const nextNodes = nextGraph.nodes.map((node) => {
+      const roles = clearedRolesByVideoId.get(node.id);
+      return roles ? clearVideoFrameAssetState(node, [...roles]) : node;
+    });
+    nodesRef.current = nextNodes;
+    edgesRef.current = nextGraph.edges;
+    setNodes(nextNodes);
+    setEdges(nextGraph.edges);
+  }, [edges, isGraphReady, nodeMap, nodes, uploadingVideoFrameKeys]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -5563,7 +6255,8 @@ function WorkflowPage({
         return;
       }
 
-      if (event.key === 'Backspace' && !isEditableElement(event.target)) {
+      const isCanvasDeleteKey = event.key === 'Backspace' || event.key === 'Delete';
+      if (isCanvasDeleteKey && !isEditableElement(event.target)) {
         const focusedGroupIdSnapshot = focusedGroupIdRef.current;
         if (
           focusedGroupIdSnapshot &&
@@ -5824,6 +6517,7 @@ function WorkflowPage({
     setSelectedEdgeIds([]);
     setPromptFocusNodeId('');
     setExpandedPromptNodeId('');
+    setOpenMediaGenerationTypeNodeId('');
     setOpenTextModelNodeId('');
     setOpenImageModelNodeId('');
     setOpenImageRatioNodeId('');
@@ -5944,12 +6638,6 @@ function WorkflowPage({
         pastedNodeIdBySourceId.get(
           sourceNode.seedanceVirtualAssetTargetNodeId,
         ) || '';
-      const hasCopiedVirtualAssetResource =
-        sourceNode.type === 'video' &&
-        clipboard.nodes.some(
-          (node) =>
-            node.seedanceVirtualAssetTargetNodeId === sourceNode.id,
-        );
       const pastedNode = {
         ...sourceNode,
         id: pastedNodeId,
@@ -5964,17 +6652,8 @@ function WorkflowPage({
           : '',
         seedanceVirtualAssetTargetNodeId:
           remappedVirtualAssetTargetNodeId,
-        seedanceVirtualAssets:
-          sourceNode.type === 'video' && !hasCopiedVirtualAssetResource
-            ? []
-            : sourceNode.seedanceVirtualAssets,
-        videoModelCapabilityMode:
-          sourceNode.type === 'video' &&
-          !hasCopiedVirtualAssetResource &&
-          sourceNode.videoModelCapabilityMode ===
-            VIDEO_MODEL_CAPABILITY_VIRTUAL_CHARACTER
-            ? VIDEO_INPUT_MODE_REFERENCE
-            : sourceNode.videoModelCapabilityMode,
+        seedanceVirtualAssets: sourceNode.seedanceVirtualAssets,
+        videoModelCapabilityMode: sourceNode.videoModelCapabilityMode,
         status: isActiveGenerationStatus(sourceNode.status) ? 'idle' : sourceNode.status,
       };
       delete pastedNode.canvasGroups;
@@ -6176,7 +6855,105 @@ function WorkflowPage({
     setNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)));
   }
 
+  function changeMediaGenerationType(nodeId, nextType) {
+    if (!MEDIA_GENERATION_TYPE_OPTIONS.some((option) => option.type === nextType)) {
+      return;
+    }
+
+    const currentNode = nodesRef.current.find((node) => node.id === nodeId);
+    if (currentNode?.type === 'video' && nextType !== 'video') {
+      removeInternalVideoFrameRoles(nodeId, [
+        VIDEO_INPUT_ROLE_FIRST_FRAME,
+        VIDEO_INPUT_ROLE_END_FRAME,
+      ]);
+    }
+
+    const targetMeta = getNodeTypeMeta(nextType);
+    setNodes((current) =>
+      current.map((node) => {
+        if (
+          node.id !== nodeId ||
+          !MEDIA_GENERATION_TYPE_OPTIONS.some((option) => option.type === node.type) ||
+          node.type === nextType
+        ) {
+          return node;
+        }
+
+        const targetModel = getSelectedModelOption(
+          nextType,
+          node.model,
+          modelOptionsByNodeType,
+        );
+        const targetAspectRatios = targetModel?.aspectRatios || [];
+        const targetResolutions = targetModel?.resolutions || [];
+
+        return {
+          ...node,
+          type: nextType,
+          title: getMediaNodeTitle(nextType),
+          subtitle: targetMeta.description,
+          status: 'idle',
+          generationStatus: '',
+          generationRunId: '',
+          model: targetModel?.label || '',
+          aspectRatio: targetAspectRatios.includes(node.aspectRatio)
+            ? node.aspectRatio
+            : targetAspectRatios[0] || '',
+          resolution: targetResolutions.includes(node.resolution)
+            ? node.resolution
+            : targetResolutions[0] || '',
+          durationSeconds:
+            nextType === 'video'
+              ? clampVideoDurationSeconds(node.durationSeconds || MIN_VIDEO_DURATION_SECONDS)
+              : '',
+          paramValuesJson: {},
+          modeType: '',
+          videoInputMode:
+            nextType === 'video' ? VIDEO_INPUT_MODE_REFERENCE : '',
+          videoModelCapabilityMode:
+            nextType === 'video' ? VIDEO_INPUT_MODE_REFERENCE : '',
+          firstFrameAsset: null,
+          endFrameAsset: null,
+          seedanceVirtualAssets: [],
+          mediaPreviewUrl: '',
+          mediaFileName: '',
+          mediaFileSize: 0,
+          mediaMimeType: '',
+          generationMeta: normalizeGenerationMeta(null),
+          pendingGenerationMeta: normalizeGenerationMeta(null),
+          connectableTargetTypes: getDefaultConnectableTargetTypes(nextType),
+          tags: [targetMeta.label],
+        };
+      }),
+    );
+    setEdges((current) =>
+      current.map((edge) => {
+        if (edge.to !== nodeId) {
+          return edge;
+        }
+        if (nextType !== 'video') {
+          return { ...edge, targetPortKey: '' };
+        }
+        const sourceNode = nodesRef.current.find((node) => node.id === edge.from);
+        return {
+          ...edge,
+          targetPortKey: getReferenceTargetPortKey(sourceNode),
+        };
+      }),
+    );
+    clearNodeRunSyncTimer(nodeId);
+    setGenerationFailedNodeIds((current) => current.filter((item) => item !== nodeId));
+    closePromptPopoverOptionMenus();
+
+    window.requestAnimationFrame(() => {
+      viewportRef.current
+        ?.querySelector(`[data-prompt-editor-node-id="${nodeId}"]`)
+        ?.focus?.();
+    });
+  }
+
   function closePromptPopoverOptionMenus() {
+    setOpenMediaGenerationTypeNodeId('');
     setOpenTextModelNodeId('');
     setOpenImageModelNodeId('');
     setOpenImageRatioNodeId('');
@@ -6186,6 +6963,91 @@ function WorkflowPage({
     setOpenVideoResolutionNodeId('');
     setOpenVideoDurationNodeId('');
     setOpenAudioModelNodeId('');
+  }
+
+  function renderMediaGenerationTypeIcon(type) {
+    return type === 'video' ? (
+      <svg className={styles.mediaGenerationTypeIcon} aria-hidden="true" viewBox="0 0 18 18">
+        <rect x="2.25" y="3.25" width="13.5" height="11.5" rx="2" />
+        <path d="M6 3.5v11M12 3.5v11M2.5 7h3.25M12.25 7h3.25M2.5 11h3.25M12.25 11h3.25" />
+      </svg>
+    ) : (
+      <svg className={styles.mediaGenerationTypeIcon} aria-hidden="true" viewBox="0 0 18 18">
+        <rect x="2.25" y="2.75" width="13.5" height="12.5" rx="2" />
+        <circle cx="11.8" cy="6.2" r="1.35" />
+        <path d="m3.5 13 3.25-3.5 2.15 2.15 1.65-1.7 3.95 3.05" />
+      </svg>
+    );
+  }
+
+  function renderMediaGenerationTypeSelect(node) {
+    const isMenuOpen = openMediaGenerationTypeNodeId === node.id;
+    const selectedOption =
+      MEDIA_GENERATION_TYPE_OPTIONS.find((option) => option.type === node.type) ||
+      MEDIA_GENERATION_TYPE_OPTIONS[0];
+
+    return (
+      <div
+        className={`${styles.videoPromptField} ${styles.mediaGenerationTypeSelect}`}
+        tabIndex={-1}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            setOpenMediaGenerationTypeNodeId('');
+          }
+        }}
+      >
+        <button
+          className={styles.videoModelTrigger}
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={isMenuOpen}
+          aria-label={`生成类型：${selectedOption.label}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.parentElement?.focus();
+            closePromptPopoverOptionMenus();
+            setOpenMediaGenerationTypeNodeId(isMenuOpen ? '' : node.id);
+          }}
+        >
+          {renderMediaGenerationTypeIcon(selectedOption.type)}
+          <span>{selectedOption.label}</span>
+        </button>
+        {isMenuOpen ? (
+          <div
+            className={`${styles.videoModelMenu} ${styles.mediaGenerationTypeMenu}`}
+            role="listbox"
+            aria-label="生成类型"
+          >
+            {MEDIA_GENERATION_TYPE_OPTIONS.map((option) => {
+              const isSelected = option.type === node.type;
+              return (
+                <button
+                  key={option.type}
+                  className={isSelected ? styles.videoModelMenuItemActive : ''}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (isSelected) {
+                      setOpenMediaGenerationTypeNodeId('');
+                      return;
+                    }
+                    changeMediaGenerationType(node.id, option.type);
+                  }}
+                >
+                  {renderMediaGenerationTypeIcon(option.type)}
+                  <span>{option.label}</span>
+                  {isSelected ? <span className={styles.mediaGenerationTypeCheck}>✓</span> : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   function togglePromptPopoverExpanded(nodeId, event) {
@@ -6235,8 +7097,8 @@ function WorkflowPage({
     );
   }
 
-  function renderPromptReferenceRow(node, references, ariaLabel) {
-    if (!Array.isArray(references) || references.length === 0) {
+  function renderPromptReferenceRow(node, references, ariaLabel, trailingContent = null) {
+    if ((!Array.isArray(references) || references.length === 0) && !trailingContent) {
       return null;
     }
 
@@ -6245,15 +7107,118 @@ function WorkflowPage({
         className={styles.promptReferenceRow}
         aria-label={ariaLabel}
       >
-        {renderNodeInputReferenceThumbnails(node.id, references, ariaLabel)}
+        {renderNodeInputReferenceThumbnails(
+          node.id,
+          references,
+          ariaLabel,
+          trailingContent,
+        )}
       </div>
     );
+  }
+
+  function renderVideoFrameUploadButton(node, role) {
+    const uploadKey = `${node.id}:${role}`;
+    const isUploading = uploadingVideoFrameKeys.includes(uploadKey);
+    const roleLabel =
+      role === VIDEO_INPUT_ROLE_END_FRAME ? '尾帧' : '首帧';
+
+    return (
+      <label
+        key={`upload-${role}`}
+        className={`${styles.videoFrameUploadButton} ${
+          isUploading ? styles.videoFrameUploadButtonLoading : ''
+        }`}
+        style={{ order: getVideoFrameRoleDisplayOrder(role) }}
+        title={`上传${roleLabel}图片`}
+        aria-label={`上传${roleLabel}图片`}
+        aria-busy={isUploading}
+      >
+        <input
+          type="file"
+          accept="image/*"
+          disabled={isUploading}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            if (file) {
+              uploadVideoFrameAsset(file, node.id, role);
+            }
+          }}
+        />
+        {isUploading ? (
+          <span className={styles.videoFrameUploadSpinner} aria-hidden />
+        ) : (
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <rect x="4" y="5" width="16" height="14" rx="2" />
+            <path d="m7 16 3.5-3.5 2.5 2.5 1.8-1.8L18 16.5" />
+            <circle cx="15.8" cy="9.2" r="1.25" />
+            <path d="M12 8v5M9.5 10.5h5" />
+          </svg>
+        )}
+        <span className={styles.videoFrameUploadRole} aria-hidden>
+          {roleLabel.slice(0, 1)}
+        </span>
+      </label>
+    );
+  }
+
+  function renderVideoFrameUploadButtons(node, mode) {
+    const missingRoles = getVideoFrameUploadRoles(mode).filter((role) => {
+      const internalFrameNode = getInternalVideoFrameNode(nodes, node.id, role);
+      const internalFrameUrl = String(
+        internalFrameNode?.mediaPreviewUrl || '',
+      ).trim();
+      return !internalFrameUrl && !getVideoFrameAsset(node, role);
+    });
+    if (missingRoles.length === 0) {
+      return null;
+    }
+    return missingRoles.map((role) => renderVideoFrameUploadButton(node, role));
   }
 
   function removeNodeInputReference(nodeId, reference, event) {
     event?.preventDefault?.();
     event?.stopPropagation?.();
     setHoveredInputReferenceKey('');
+
+    if (
+      reference?.sourceKind === 'internal-frame' &&
+      [VIDEO_INPUT_ROLE_FIRST_FRAME, VIDEO_INPUT_ROLE_END_FRAME].includes(
+        reference.frameRole,
+      )
+    ) {
+      removeInternalVideoFrameRoles(nodeId, [reference.frameRole]);
+      return;
+    }
+
+    if (
+      reference?.sourceKind === 'direct-frame' &&
+      [VIDEO_INPUT_ROLE_FIRST_FRAME, VIDEO_INPUT_ROLE_END_FRAME].includes(
+        reference.frameRole,
+      )
+    ) {
+      const role = reference.frameRole;
+      setNodes((current) =>
+        current.map((node) => {
+          if (node.id !== nodeId) {
+            return node;
+          }
+          const nextParamValuesJson = { ...(node.paramValuesJson || {}) };
+          const isEndFrame = role === VIDEO_INPUT_ROLE_END_FRAME;
+          const keysToRemove = isEndFrame
+            ? ['endFrameUrl', 'end_frame_url', 'endFrameAsset', 'end_frame_asset']
+            : ['firstFrameUrl', 'first_frame_url', 'firstFrameAsset', 'first_frame_asset'];
+          keysToRemove.forEach((key) => delete nextParamValuesJson[key]);
+          return {
+            ...node,
+            paramValuesJson: nextParamValuesJson,
+            [isEndFrame ? 'endFrameAsset' : 'firstFrameAsset']: null,
+          };
+        }),
+      );
+      return;
+    }
 
     if (reference?.sourceKind === 'edge' && reference.edgeId) {
       removeCanvasItems([], [reference.edgeId]);
@@ -6292,15 +7257,21 @@ function WorkflowPage({
     }
   }
 
-  function renderNodeInputReferenceThumbnails(nodeId, references, ariaLabel = '当前输入参考素材') {
-    if (!Array.isArray(references) || references.length === 0) {
+  function renderNodeInputReferenceThumbnails(
+    nodeId,
+    references,
+    ariaLabel = '当前输入参考素材',
+    trailingContent = null,
+  ) {
+    const safeReferences = Array.isArray(references) ? references : [];
+    if (safeReferences.length === 0 && !trailingContent) {
       return null;
     }
 
-    const hoveredReferenceIndex = references.findIndex(
+    const hoveredReferenceIndex = safeReferences.findIndex(
       (reference) => hoveredInputReferenceKey === `${nodeId}:${reference.id}`,
     );
-    const hoveredReference = references[hoveredReferenceIndex] || null;
+    const hoveredReference = safeReferences[hoveredReferenceIndex] || null;
     const hasHoveredReferencePreview =
       Boolean(hoveredReference?.previewUrl) ||
       (hoveredReference?.previewType === 'text' && Boolean(hoveredReference?.previewText));
@@ -6325,12 +7296,18 @@ function WorkflowPage({
             container.scrollLeft += scrollDelta;
           }}
         >
-          {references.map((reference, referenceIndex) => {
+          {safeReferences.map((reference, referenceIndex) => {
             const referenceKey = `${nodeId}:${reference.id}`;
             return (
               <span
                 key={reference.id}
                 className={styles.videoReferenceThumbnail}
+                style={{
+                  order: getVideoFrameRoleDisplayOrder(
+                    reference.frameRole,
+                    referenceIndex,
+                  ),
+                }}
                 title={reference.label}
                 tabIndex={0}
                 role="group"
@@ -6376,7 +7353,11 @@ function WorkflowPage({
                   <span className={styles.videoReferencePlayIcon} aria-hidden />
                 ) : null}
                 <i className={styles.videoReferenceThumbnailIndex} aria-hidden>
-                  {referenceIndex + 1}
+                  {reference.frameRole === VIDEO_INPUT_ROLE_FIRST_FRAME
+                    ? 1
+                    : reference.frameRole === VIDEO_INPUT_ROLE_END_FRAME
+                      ? 2
+                      : referenceIndex + 1}
                 </i>
                 <button
                   className={styles.videoReferenceRemoveButton}
@@ -6391,6 +7372,7 @@ function WorkflowPage({
               </span>
             );
           })}
+          {trailingContent}
         </div>
         {hoveredReference && hasHoveredReferencePreview ? (
           <span
@@ -6399,7 +7381,7 @@ function WorkflowPage({
             } ${
               hoveredReferenceIndex === 0 ? styles.videoReferenceHoverPreviewAlignStart : ''
             } ${
-              references.length > 1 && hoveredReferenceIndex === references.length - 1
+              safeReferences.length > 1 && hoveredReferenceIndex === safeReferences.length - 1
                 ? styles.videoReferenceHoverPreviewAlignEnd
                 : ''
             }`}
@@ -6429,13 +7411,66 @@ function WorkflowPage({
     skipGraphSaveCountRef.current += count;
   }
 
-  function getNodeGenerateParams(node) {
+  function getNodeGenerateParams(
+    node,
+    currentEdges = edgesRef.current,
+    currentNodes = nodesRef.current,
+  ) {
     if (!node) {
       return {};
     }
 
     const prompt = node.type === 'script' ? node.textPromptContent : node.content;
     const seedanceVirtualAssets = normalizeSeedanceVirtualAssets(node.seedanceVirtualAssets);
+    const currentNodeMap = currentNodes.reduce(
+      (map, currentNode) => ({ ...map, [currentNode.id]: currentNode }),
+      {},
+    );
+    const videoInputMode =
+      node.type === 'video'
+        ? getEffectiveVideoInputMode(node, currentEdges, currentNodeMap)
+        : VIDEO_INPUT_MODE_REFERENCE;
+    const incomingImageReferences =
+      node.type === 'video'
+        ? currentEdges
+            .filter((edge) => edge.to === node.id)
+            .map((edge) => ({ edge, sourceNode: currentNodeMap[edge.from] }))
+            .filter(
+              ({ sourceNode }) =>
+                getNodeMediaType(sourceNode) === 'image' &&
+                Boolean(String(sourceNode?.mediaPreviewUrl || '').trim()),
+            )
+        : [];
+    const findConnectedFrameUrl = (role, fallbackIndex = 0) => {
+      const exactReference = incomingImageReferences.find(
+        ({ edge }) => edge.targetPortKey === role,
+      );
+      return String(
+        exactReference?.sourceNode?.mediaPreviewUrl ||
+          incomingImageReferences[fallbackIndex]?.sourceNode?.mediaPreviewUrl ||
+          '',
+      ).trim();
+    };
+    const directFirstFrameAsset = getVideoFrameAsset(
+      node,
+      VIDEO_INPUT_ROLE_FIRST_FRAME,
+    );
+    const directEndFrameAsset = getVideoFrameAsset(
+      node,
+      VIDEO_INPUT_ROLE_END_FRAME,
+    );
+    const firstFrameUrl =
+      videoInputMode === VIDEO_INPUT_MODE_FIRST_FRAME ||
+      videoInputMode === VIDEO_INPUT_MODE_FIRST_END_FRAME
+        ? directFirstFrameAsset?.url ||
+          findConnectedFrameUrl(VIDEO_INPUT_ROLE_FIRST_FRAME, 0)
+        : '';
+    const endFrameUrl =
+      videoInputMode === VIDEO_INPUT_MODE_FIRST_END_FRAME
+        ? directEndFrameAsset?.url ||
+          findConnectedFrameUrl(VIDEO_INPUT_ROLE_END_FRAME, 1)
+        : '';
+    const videoFrameUrls = [firstFrameUrl, endFrameUrl].filter(Boolean);
     return {
       prompt: prompt || '',
       content: prompt || '',
@@ -6445,10 +7480,52 @@ function WorkflowPage({
       resolution: node.resolution || '',
       duration_seconds: node.durationSeconds || '',
       durationSeconds: node.durationSeconds || '',
+      ...(node.type === 'video'
+        ? {
+            videoInputMode,
+            video_input_mode: videoInputMode,
+          }
+        : {}),
       ...(node.type === 'video' && node.modeType
         ? {
             modeType: node.modeType,
             mode_type: node.modeType,
+          }
+        : {}),
+      ...(firstFrameUrl
+        ? {
+            firstFrameUrl,
+            first_frame_url: firstFrameUrl,
+            firstFrameImage: firstFrameUrl,
+            first_frame_image: firstFrameUrl,
+            ...(directFirstFrameAsset
+              ? {
+                  firstFrameAsset: directFirstFrameAsset,
+                  first_frame_asset: directFirstFrameAsset,
+                }
+              : {}),
+          }
+        : {}),
+      ...(endFrameUrl
+        ? {
+            endFrameUrl,
+            end_frame_url: endFrameUrl,
+            endFrameImage: endFrameUrl,
+            end_frame_image: endFrameUrl,
+            ...(directEndFrameAsset
+              ? {
+                  endFrameAsset: directEndFrameAsset,
+                  end_frame_asset: directEndFrameAsset,
+                }
+              : {}),
+          }
+        : {}),
+      ...(videoFrameUrls.length > 0
+        ? {
+            imageUrls: videoFrameUrls,
+            image_urls: videoFrameUrls,
+            inputImages: videoFrameUrls,
+            input_images: videoFrameUrls,
           }
         : {}),
       ...(seedanceVirtualAssets.length > 0
@@ -6461,6 +7538,67 @@ function WorkflowPage({
           }
         : {}),
     };
+  }
+
+  function buildGenerationMetaSnapshot(
+    node,
+    currentEdges = edgesRef.current,
+    currentNodes = nodesRef.current,
+  ) {
+    if (!node || !['image', 'video'].includes(node.type)) {
+      return normalizeGenerationMeta(node?.generationMeta);
+    }
+    const currentNodeMap = currentNodes.reduce(
+      (map, currentNode) => ({ ...map, [currentNode.id]: currentNode }),
+      {},
+    );
+    const references = getNodeInputReferenceThumbnails(
+      node,
+      currentEdges,
+      currentNodeMap,
+      seedanceCharacters,
+    ).map((reference, index) => ({
+      id: String(reference.id || `reference-${index}`),
+      type: String(reference.frameRole || reference.sourceKind || 'reference'),
+      label: String(reference.label || `参考素材 ${index + 1}`),
+      url: String(reference.previewUrl || '').trim(),
+    }));
+
+    return normalizeGenerationMeta({
+      requestedAt: new Date().toISOString(),
+      model: node.model || '',
+      prompt: node.content || '',
+      aspectRatio: node.aspectRatio || '',
+      resolution: node.resolution || '',
+      durationSeconds: node.durationSeconds || 0,
+      references,
+      outputs: [],
+    });
+  }
+
+  function getCompletedGenerationMeta(node, result, nodeRunId = '') {
+    const pendingMeta = normalizeGenerationMeta(node?.pendingGenerationMeta);
+    const previousMeta = pendingMeta.requestedAt || pendingMeta.runId
+      ? pendingMeta
+      : normalizeGenerationMeta(node?.generationMeta);
+    const output = getNodeRunOutputSnapshot(result);
+    const outputs = getNodeRunOutputs(result, nodeRunId);
+    const generatedAt = String(
+      result?.completed_at ??
+        result?.completedAt ??
+        result?.finished_at ??
+        result?.finishedAt ??
+        output.completed_at ??
+        output.completedAt ??
+        '',
+    ).trim() || new Date().toISOString();
+
+    return normalizeGenerationMeta({
+      ...previousMeta,
+      runId: nodeRunId || previousMeta.runId,
+      generatedAt,
+      outputs: outputs.length > 0 ? outputs : previousMeta.outputs,
+    });
   }
 
   async function refreshPointsAfterGeneration() {
@@ -6888,6 +8026,80 @@ function WorkflowPage({
     ).trim();
   }
 
+  function getNodeRunOutputs(result, nodeRunId = '') {
+    const output = getNodeRunOutputSnapshot(result);
+    const arrayCandidates = [
+      result?.outputs,
+      result?.output_urls,
+      result?.outputUrls,
+      result?.images,
+      result?.videos,
+      result?.node_run?.outputs,
+      result?.node_run?.output_urls,
+      result?.node_run?.outputUrls,
+      output.outputs,
+      output.output_urls,
+      output.outputUrls,
+      output.images,
+      output.videos,
+    ];
+    const sourceItems = arrayCandidates.find((candidate) => Array.isArray(candidate)) || [];
+    const normalizedItems = sourceItems
+      .map((item, index) => {
+        const details = typeof item === 'string' ? { url: item } : parseJsonObject(item);
+        const url = String(
+          details.url ??
+            details.oss_url ??
+            details.ossUrl ??
+            details.output_url ??
+            details.outputUrl ??
+            details.asset_url ??
+            details.assetUrl ??
+            details.image_url ??
+            details.imageUrl ??
+            details.video_url ??
+            details.videoUrl ??
+            '',
+        ).trim();
+        if (!url) {
+          return null;
+        }
+        return {
+          id: String(details.id || `${nodeRunId || 'output'}-${index}`),
+          url,
+          width: Number(details.width ?? details.image_width ?? details.video_width) || 0,
+          height: Number(details.height ?? details.image_height ?? details.video_height) || 0,
+          duration: Number(details.duration ?? details.duration_seconds) || 0,
+          fileSize: Number(details.fileSize ?? details.file_size ?? details.size) || 0,
+          mimeType: String(
+            details.mimeType ?? details.mime_type ?? details.content_type ?? '',
+          ).trim(),
+        };
+      })
+      .filter(Boolean);
+
+    if (normalizedItems.length > 0) {
+      return normalizedItems;
+    }
+
+    const outputUrl = getNodeRunOutputUrl(result);
+    return outputUrl
+      ? [
+          {
+            id: String(output.id || nodeRunId || 'output-0'),
+            url: outputUrl,
+            width: Number(output.width ?? output.image_width ?? output.video_width) || 0,
+            height: Number(output.height ?? output.image_height ?? output.video_height) || 0,
+            duration: Number(output.duration ?? output.duration_seconds) || 0,
+            fileSize: Number(output.fileSize ?? output.file_size ?? output.size) || 0,
+            mimeType: String(
+              output.mimeType ?? output.mime_type ?? output.content_type ?? '',
+            ).trim(),
+          },
+        ]
+      : [];
+  }
+
   function getNodeRunPatch(node, result) {
     if (!node) {
       return {};
@@ -6899,8 +8111,28 @@ function WorkflowPage({
     }
 
     if (['image', 'video', 'audio'].includes(node.type)) {
-      const outputUrl = getNodeRunOutputUrl(result);
-      return outputUrl ? { mediaPreviewUrl: outputUrl, mediaFileName: '' } : {};
+      const outputUrl =
+        getNodeRunOutputUrl(result) ||
+        getNodeRunOutputs(result, getNodeRunId(result))[0]?.url ||
+        '';
+      return outputUrl
+        ? {
+          mediaPreviewUrl: outputUrl,
+          mediaFileName: '',
+          mediaFileSize: 0,
+          mediaMimeType: '',
+            ...(['image', 'video'].includes(node.type)
+              ? {
+                  generationMeta: getCompletedGenerationMeta(
+                    node,
+                    result,
+                    getNodeRunId(result),
+                  ),
+                  pendingGenerationMeta: normalizeGenerationMeta(null),
+                }
+              : {}),
+          }
+        : {};
     }
 
     return {};
@@ -6978,6 +8210,7 @@ function WorkflowPage({
           status: 'failed',
           generationStatus: status || 'failed',
           generationRunId: nodeRunId,
+          pendingGenerationMeta: normalizeGenerationMeta(null),
         });
         finishNodeRunSync(nodeId, true);
         return;
@@ -6991,10 +8224,11 @@ function WorkflowPage({
             }
             return {
               ...node,
-              ...getNodeRunPatch(node, result),
-              status: 'success',
-              generationStatus: status || 'success',
-              generationRunId: '',
+            ...getNodeRunPatch(node, result),
+            status: 'success',
+            generationStatus: status || 'success',
+            generationRunId: '',
+            pendingGenerationMeta: normalizeGenerationMeta(null),
             };
           }),
         );
@@ -7013,6 +8247,7 @@ function WorkflowPage({
         status: 'failed',
         generationStatus: 'failed',
         generationRunId: nodeRunId,
+        pendingGenerationMeta: normalizeGenerationMeta(null),
       });
       finishNodeRunSync(nodeId, true);
     }
@@ -7067,6 +8302,9 @@ function WorkflowPage({
             status: nextStatus,
             generationStatus: nodeStatus || node.generationStatus || '',
             generationRunId: isSuccessGenerationStatus(nodeStatus) ? '' : nodeRunId || node.generationRunId || '',
+            ...(isSuccessGenerationStatus(nodeStatus) || isFailureGenerationStatus(nodeStatus)
+              ? { pendingGenerationMeta: normalizeGenerationMeta(null) }
+              : {}),
           };
         }),
       );
@@ -7101,7 +8339,13 @@ function WorkflowPage({
         current.map((node) =>
           (!scopedNodeIdSet || scopedNodeIdSet.has(node.id)) &&
           isActiveGenerationStatus(node.status)
-            ? { ...node, status: nextStatus, generationStatus: workflowStatus || nextStatus, generationRunId: '' }
+            ? {
+                ...node,
+                status: nextStatus,
+                generationStatus: workflowStatus || nextStatus,
+                generationRunId: '',
+                pendingGenerationMeta: normalizeGenerationMeta(null),
+              }
             : node,
         ),
       );
@@ -7170,7 +8414,12 @@ function WorkflowPage({
         current.map((node) =>
           (!scopedNodeIds || scopedNodeIds.includes(node.id)) &&
           isActiveGenerationStatus(node.status)
-            ? { ...node, status: 'failed', generationStatus: 'failed' }
+            ? {
+                ...node,
+                status: 'failed',
+                generationStatus: 'failed',
+                pendingGenerationMeta: normalizeGenerationMeta(null),
+              }
             : node,
         ),
       );
@@ -7256,6 +8505,9 @@ function WorkflowPage({
 
     setGeneratingNodeIds((current) => (current.includes(nodeId) ? current : [...current, nodeId]));
     setGenerationFailedNodeIds((current) => current.filter((item) => item !== nodeId));
+    const pendingGenerationMeta = ['image', 'video'].includes(targetNode.type)
+      ? buildGenerationMetaSnapshot(targetNode)
+      : null;
 
     try {
       const result = await freeCanvasApi.generateNode(canvasProjectId, nodeId, {
@@ -7272,6 +8524,14 @@ function WorkflowPage({
         status: 'queued',
         generationStatus: 'queued',
         generationRunId: nodeRunId,
+        ...(['image', 'video'].includes(targetNode.type)
+          ? {
+              pendingGenerationMeta: {
+                ...pendingGenerationMeta,
+                runId: nodeRunId,
+              },
+            }
+          : {}),
       });
       scheduleNodeRunSync(canvasProjectId, nodeId, nodeRunId);
     } catch {
@@ -7279,6 +8539,7 @@ function WorkflowPage({
         status: 'failed',
         generationStatus: 'failed',
         generationRunId: '',
+        pendingGenerationMeta: normalizeGenerationMeta(null),
       });
       finishNodeRunSync(nodeId, true);
     }
@@ -7404,6 +8665,8 @@ function WorkflowPage({
           status: 'success',
           mediaPreviewUrl: uploadedUrl,
           mediaFileName: uploadedFileName,
+          mediaFileSize: Number(file.size) || 0,
+          mediaMimeType: String(file.type || '').trim(),
           resourceContentJson:
             Object.keys(uploadedContentJson).length > 0
               ? uploadedContentJson
@@ -7431,6 +8694,158 @@ function WorkflowPage({
       return false;
     } finally {
       setUploadingNodeIds((current) => current.filter((item) => item !== nodeId));
+    }
+  }
+
+  async function uploadVideoFrameAsset(file, nodeId, role) {
+    const uploadKey = `${nodeId}:${role}`;
+    const videoNode = nodesRef.current.find(
+      (node) => node.id === nodeId && node.type === 'video',
+    );
+    const isSupportedRole = [
+      VIDEO_INPUT_ROLE_FIRST_FRAME,
+      VIDEO_INPUT_ROLE_END_FRAME,
+    ].includes(role);
+    if (!videoNode || !isSupportedRole || uploadingVideoFrameKeys.includes(uploadKey)) {
+      return false;
+    }
+    if (getCanvasMediaNodeType(file) !== 'image') {
+      showNoticeAtEvent(null, '首帧和尾帧仅支持上传图片');
+      return false;
+    }
+    if (!canvasProjectId) {
+      showNoticeAtEvent(null, '画布项目未就绪');
+      return false;
+    }
+    setUploadingVideoFrameKeys((current) =>
+      current.includes(uploadKey) ? current : [...current, uploadKey],
+    );
+
+    let frameNode = getInternalVideoFrameNode(
+      nodesRef.current,
+      nodeId,
+      role,
+    );
+    const createdFrameNode = !frameNode;
+    try {
+      if (!frameNode) {
+        frameNode = buildNewNode('upload_image', {
+          worldPoint: {
+            x: videoNode.x + videoNode.width / 2,
+            y: videoNode.y + videoNode.height / 2,
+          },
+          title:
+            role === VIDEO_INPUT_ROLE_END_FRAME
+              ? '内部尾帧素材'
+              : '内部首帧素材',
+          videoInputRole: role,
+          videoInputTargetNodeId: nodeId,
+          empty: true,
+        });
+      }
+      let nextNodes = nodesRef.current.some((node) => node.id === frameNode.id)
+        ? nodesRef.current
+        : [...nodesRef.current, frameNode];
+      let nextEdges = edgesRef.current;
+      const existingFrameEdge = nextEdges.find(
+        (edge) => edge.from === frameNode.id && edge.to === nodeId,
+      );
+      if (!existingFrameEdge) {
+        edgeSequenceRef.current += 1;
+        nextEdges = [
+          ...nextEdges,
+          {
+            id: `edge-${frameNode.id}-${nodeId}-${edgeSequenceRef.current}`,
+            ...normalizeCanvasEdgePorts({
+              from: frameNode.id,
+              to: nodeId,
+              sourcePortKey: 'output',
+              targetPortKey: role,
+              sortOrder:
+                role === VIDEO_INPUT_ROLE_END_FRAME ? 1 : 0,
+            }),
+          },
+        ];
+      } else if (existingFrameEdge.targetPortKey !== role) {
+        nextEdges = nextEdges.map((edge) =>
+          edge.id === existingFrameEdge.id
+            ? { ...edge, targetPortKey: role }
+            : edge,
+        );
+      }
+      const graphSaved = await saveGraphSnapshotNow(nextNodes, nextEdges);
+      if (!graphSaved) {
+        throw new Error('内部图片节点保存失败，请稍后重试上传');
+      }
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('slot_key', 'upload');
+      const result = await freeCanvasApi.uploadNodeAsset(
+        canvasProjectId,
+        frameNode.id,
+        formData,
+      );
+      const uploadedUrl = getUploadedAssetUrl(result);
+      if (!uploadedUrl) {
+        throw new Error('上传结果未返回文件地址');
+      }
+      const uploadedFileName = getUploadedAssetFileName(result, file.name);
+      const uploadedContentJson = getUploadedNodeContentJson(result);
+      nextNodes = nodesRef.current.map((node) =>
+        node.id === frameNode.id
+          ? {
+              ...node,
+              title: uploadedFileName,
+              status: 'success',
+              mediaPreviewUrl: uploadedUrl,
+              mediaFileName: uploadedFileName,
+              resourceContentJson:
+                Object.keys(uploadedContentJson).length > 0
+                  ? uploadedContentJson
+                  : {
+                      type: 'image',
+                      url: [uploadedUrl],
+                      action: 'image_resource',
+                      output: {
+                        url: uploadedUrl,
+                        source: 'upload',
+                      },
+                    },
+            }
+          : node.id === nodeId
+            ? clearVideoFrameAssetState(node, [role])
+            : node,
+      );
+      nodesRef.current = nextNodes;
+      setNodes(nextNodes);
+      return true;
+    } catch (error) {
+      if (createdFrameNode && frameNode) {
+        const rollbackGraph = removeCanvasGraphItems(
+          nodesRef.current,
+          edgesRef.current,
+          [frameNode.id],
+          [],
+        );
+        nodesRef.current = rollbackGraph.nodes;
+        edgesRef.current = rollbackGraph.edges;
+        setNodes(rollbackGraph.nodes);
+        setEdges(rollbackGraph.edges);
+      }
+      showNoticeAtEvent(
+        null,
+        parseApiErrorMessage(error, '图片上传失败，请稍后重试'),
+      );
+      return false;
+    } finally {
+      setUploadingVideoFrameKeys((current) =>
+        current.filter((item) => item !== uploadKey),
+      );
     }
   }
 
@@ -7647,6 +9062,25 @@ function WorkflowPage({
     }
 
     const node = nodeMap[nodeId];
+    const mediaType = getNodeMediaType(node);
+    const isMediaPreviewControl = Boolean(
+      event.target.closest?.('button, input, textarea, select, a[href]'),
+    );
+    if (
+      ['image', 'video'].includes(mediaType) &&
+      node?.mediaPreviewUrl &&
+      !isMediaPreviewControl &&
+      event.target.closest?.('[data-media-preview="true"]')
+    ) {
+      if (mediaType === 'video') {
+        preventNativeVideoFullscreen(event);
+      } else {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      setMediaDetailNodeId(nodeId);
+      return;
+    }
     if (isResourceContainerNodeType(node?.type)) {
       const uploadInput = event.currentTarget.querySelector?.('input[type="file"]');
       if (uploadInput) {
@@ -7794,6 +9228,20 @@ function WorkflowPage({
                 VIDEO_INPUT_MODE_REFERENCE,
             ).trim()
           : '',
+      firstFrameAsset:
+        type === 'video'
+          ? normalizeVideoFrameAsset(
+              options.firstFrameAsset,
+              VIDEO_INPUT_ROLE_FIRST_FRAME,
+            )
+          : null,
+      endFrameAsset:
+        type === 'video'
+          ? normalizeVideoFrameAsset(
+              options.endFrameAsset,
+              VIDEO_INPUT_ROLE_END_FRAME,
+            )
+          : null,
       model:
         isResourceContainerNodeType(type)
           ? ''
@@ -7819,6 +9267,10 @@ function WorkflowPage({
       videoInputTargetNodeId: String(options.videoInputTargetNodeId || '').trim(),
       mediaPreviewUrl: String(options.mediaPreviewUrl || '').trim(),
       mediaFileName: String(options.mediaFileName || '').trim(),
+      mediaFileSize: Number(options.mediaFileSize) || 0,
+      mediaMimeType: String(options.mediaMimeType || '').trim(),
+      generationMeta: normalizeGenerationMeta(options.generationMeta),
+      pendingGenerationMeta: normalizeGenerationMeta(options.pendingGenerationMeta),
       resourceContentJson: firstObject(options.resourceContentJson),
       connectableTargetTypes:
         options.connectableTargetTypes ??
@@ -8000,6 +9452,8 @@ function WorkflowPage({
       worldPoint: anchor.worldPoint,
       title: file.name || (mediaType === 'video' ? '上传视频' : '上传图片'),
       mediaFileName: file.name || '',
+      mediaFileSize: Number(file.size) || 0,
+      mediaMimeType: String(file.type || '').trim(),
       empty: true,
     });
     const nextNodes = [...nodesRef.current, nextNode];
@@ -8081,9 +9535,12 @@ function WorkflowPage({
   }
 
   function createEmptyCanvasPreset(preset, event) {
-    if (!preset || nodes.length > 0 || groups.length > 0) {
+    if (!preset || visibleNodes.length > 0 || groups.length > 0) {
       return;
     }
+
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
 
     const rect = viewportRef.current?.getBoundingClientRect();
     if (!rect?.width || !rect?.height) {
@@ -8092,6 +9549,31 @@ function WorkflowPage({
 
     const centerWorld = screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
     const sourceSize = getDefaultNodeSize(preset.sourceType);
+    if (!preset.targetType) {
+      const sourceNode = buildNewNode(preset.sourceType, {
+        worldPoint: centerWorld,
+        title: preset.sourceTitle,
+        empty: true,
+        connectableTargetTypes: preset.sourceConnectableTargetTypes,
+      });
+      const nextNodes = [sourceNode];
+
+      nodesRef.current = nextNodes;
+      edgesRef.current = [];
+      groupsRef.current = [];
+      setNodes(nextNodes);
+      setEdges([]);
+      setGroups([]);
+      selectNodes([sourceNode.id], sourceNode.id);
+      setPromptFocusNodeId(sourceNode.id);
+      window.requestAnimationFrame(() => {
+        viewportRef.current
+          ?.querySelector(`[data-prompt-editor-node-id="${sourceNode.id}"]`)
+          ?.focus?.();
+      });
+      return;
+    }
+
     const targetSize = getDefaultNodeSize(preset.targetType);
     const gap = preset.targetType === 'video' ? 48 : 130;
     const totalWidth = sourceSize.width + gap + targetSize.width;
@@ -8229,9 +9711,14 @@ function WorkflowPage({
     setNodes(nextNodes);
     setEdges(nextEdges);
     setGroups(nextGroups);
-    const focusNode = preset.targetType === 'video' ? targetNode : sourceNode;
+    const focusNode = preset.focusNode === 'source' ? sourceNode : targetNode;
     selectNodes([focusNode.id], focusNode.id);
     setPromptFocusNodeId(focusNode.id);
+    window.requestAnimationFrame(() => {
+      viewportRef.current
+        ?.querySelector(`[data-prompt-editor-node-id="${focusNode.id}"]`)
+        ?.focus?.();
+    });
   }
 
   function createGroupFromSelection(event) {
@@ -8331,6 +9818,9 @@ function WorkflowPage({
       setSeedanceLibraryOpen(false);
       setSeedanceLibraryNodeId('');
     }
+    if (nodeIdSet.has(mediaDetailNodeId)) {
+      setMediaDetailNodeId('');
+    }
     if (nodeIdSet.has(videoFrameExtractor.nodeId)) {
       videoFrameExtractorRef.current?.pause?.();
       videoFrameExtractionInFlightRef.current = false;
@@ -8395,12 +9885,35 @@ function WorkflowPage({
           ? getReferenceTargetPortKey(resolvedSourceNode)
           : '',
     });
-    const limitViolation = getConnectionLimitViolation(normalizedEdge);
+    const shouldResetStructuredVideoInputs =
+      resolvedTargetNode?.type === 'video' &&
+      resolvedTargetNode.videoInputMode !== VIDEO_INPUT_MODE_REFERENCE;
+    const validationEdges = shouldResetStructuredVideoInputs
+      ? edges.filter(
+          (edge) =>
+            edge.to !== resolvedTargetNode.id ||
+            !isInternalVideoFrameEdge(edge, nodeMap),
+        )
+      : edges;
+    const limitViolation = getConnectionInputLimitViolation(
+      validationEdges,
+      nodeMap,
+      resolvedSourceNode,
+      resolvedTargetNode,
+      getNodeSelectedModelOption(resolvedTargetNode),
+    );
     if (limitViolation) {
       if (noticePoint) {
         showConnectionNotice(noticePoint.clientX, noticePoint.clientY, limitViolation);
       }
       return;
+    }
+
+    if (shouldResetStructuredVideoInputs) {
+      removeInternalVideoFrameRoles(resolvedTargetNode.id, [
+        VIDEO_INPUT_ROLE_FIRST_FRAME,
+        VIDEO_INPUT_ROLE_END_FRAME,
+      ]);
     }
 
     edgeSequenceRef.current += 1;
@@ -8732,10 +10245,10 @@ function WorkflowPage({
           };
         });
 
-      if (isSnapEnabled && nodes.length >= 2) {
+      if (isSnapEnabled && visibleNodes.length >= 2) {
         setAlignmentGuides(buildAlignmentGuides(
           movingNodes,
-          nodes.filter((node) => !draggedNodeIds.has(node.id)),
+          visibleNodes.filter((node) => !draggedNodeIds.has(node.id)),
         ));
       } else {
         setAlignmentGuides({ vertical: [], horizontal: [] });
@@ -8898,8 +10411,8 @@ function WorkflowPage({
       const selectionRect = getSelectionWorldRect(nextSelectionBox, viewport);
       setSelectionBox(nextSelectionBox);
       selectCanvasItems(
-        nodes.filter((node) => doesNodeIntersectRect(node, selectionRect)).map((node) => node.id),
-        edges
+        visibleNodes.filter((node) => doesNodeIntersectRect(node, selectionRect)).map((node) => node.id),
+        visibleEdges
           .filter((edge) => doesEdgeIntersectRect(edge, selectionRect, nodeMap))
           .map((edge) => edge.id),
       );
@@ -8909,7 +10422,7 @@ function WorkflowPage({
     if (interaction.type === 'connect') {
       const point = screenToWorld(event.clientX, event.clientY);
       const sourceNode = nodeMap[interaction.nodeId];
-      const targetNode = findNodeAtPoint(nodes, point, interaction.nodeId);
+      const targetNode = findNodeAtPoint(visibleNodes, point, interaction.nodeId);
       const normalizedEdge = targetNode ? resolveConnection(sourceNode, targetNode, interaction.side) : null;
       const limitViolation = normalizedEdge ? getConnectionLimitViolation(normalizedEdge) : null;
       setDraftPoint(point);
@@ -8994,7 +10507,7 @@ function WorkflowPage({
 
     if (interaction?.type === 'connect') {
       const point = screenToWorld(event.clientX, event.clientY);
-      const targetNode = findNodeAtPoint(nodes, point, interaction.nodeId);
+      const targetNode = findNodeAtPoint(visibleNodes, point, interaction.nodeId);
 
       if (targetNode) {
         addEdge(interaction.nodeId, targetNode.id, interaction.side, event);
@@ -9029,8 +10542,8 @@ function WorkflowPage({
         normalizedBox.width >= MIN_SELECTION_REGION_SIZE &&
         normalizedBox.height >= MIN_SELECTION_REGION_SIZE
       ) {
-        const selectedNodes = nodes.filter((node) => doesNodeIntersectRect(node, pointerSelectionRegion));
-        const selectedEdges = edges.filter((edge) =>
+        const selectedNodes = visibleNodes.filter((node) => doesNodeIntersectRect(node, pointerSelectionRegion));
+        const selectedEdges = visibleEdges.filter((edge) =>
           doesEdgeIntersectRect(edge, pointerSelectionRegion, nodeMap),
         );
         const sharedGroupId = getSharedExistingGroupId(selectedNodes, groups);
@@ -9075,7 +10588,7 @@ function WorkflowPage({
     const rect = viewportRef.current?.getBoundingClientRect();
     const width = rect?.width || viewportSize.width || window.innerWidth;
     const height = rect?.height || viewportSize.height || window.innerHeight;
-    setViewport(getFittedViewportForNodes(nodes, width, height));
+    setViewport(getFittedViewportForNodes(visibleNodes, width, height));
   }
 
   async function runCanvasGroup(groupId, event) {
@@ -9143,6 +10656,15 @@ function WorkflowPage({
                 status: 'queued',
                 generationStatus: 'queued',
                 generationRunId: '',
+                ...(['image', 'video'].includes(node.type)
+                  ? {
+                      pendingGenerationMeta: buildGenerationMetaSnapshot(
+                        node,
+                        edgesRef.current,
+                        current,
+                      ),
+                    }
+                  : {}),
               }
             : node,
         ),
@@ -9187,6 +10709,7 @@ function WorkflowPage({
                   status: 'failed',
                   generationStatus: 'failed',
                   generationRunId: '',
+                  pendingGenerationMeta: normalizeGenerationMeta(null),
                 }
               : node,
           ),
@@ -9227,6 +10750,15 @@ function WorkflowPage({
         ...node,
         status: 'queued',
         generationStatus: 'queued',
+        ...(['image', 'video'].includes(node.type)
+          ? {
+              pendingGenerationMeta: buildGenerationMetaSnapshot(
+                node,
+                edgesRef.current,
+                current,
+              ),
+            }
+          : {}),
       })),
     );
 
@@ -9250,7 +10782,12 @@ function WorkflowPage({
       setNodes((current) =>
         current.map((node) =>
           isActiveGenerationStatus(node.status)
-            ? { ...node, status: 'failed', generationStatus: 'failed' }
+            ? {
+                ...node,
+                status: 'failed',
+                generationStatus: 'failed',
+                pendingGenerationMeta: normalizeGenerationMeta(null),
+              }
             : node,
         ),
       );
@@ -9307,8 +10844,8 @@ function WorkflowPage({
         </div>
 
         <div className={styles.statusStrip} aria-label="工作流状态">
-          <span>{nodes.length} 个节点</span>
-          <span>{edges.length} 条连线</span>
+          <span>{visibleNodes.length} 个节点</span>
+          <span>{visibleEdges.length} 条连线</span>
           <span>{runningNodeCount} 个任务运行中</span>
         </div>
 
@@ -9411,7 +10948,7 @@ function WorkflowPage({
             </div>
           </div>
         </div>
-        {isGraphReady && nodes.length === 0 && groups.length === 0 ? (
+        {isGraphReady && visibleNodes.length === 0 && groups.length === 0 ? (
           <div
             className={styles.emptyCanvasPresets}
             data-canvas-ignore="true"
@@ -9420,7 +10957,7 @@ function WorkflowPage({
           >
             <div className={styles.emptyCanvasHint}>
               <span aria-hidden>⌁</span>
-              <strong>选择一个起点，自动创建并连接空节点</strong>
+              <strong>选择一种生成方式，自动创建对应节点</strong>
             </div>
             <div className={styles.emptyCanvasPresetGrid}>
               {EMPTY_CANVAS_PRESETS.map((preset) => (
@@ -9693,7 +11230,7 @@ function WorkflowPage({
                 <path d="M 0 0 L 10 5 L 0 10 z" fill="#8fdcff" />
               </marker>
             </defs>
-            {edges.map((edge, edgeIndex) => {
+            {visibleEdges.map((edge, edgeIndex) => {
               const fromNode = nodeMap[edge.from];
               const toNode = nodeMap[edge.to];
               if (!fromNode || !toNode) {
@@ -9859,7 +11396,7 @@ function WorkflowPage({
             </svg>
           ) : null}
 
-          {nodes.map((node) => {
+          {visibleNodes.map((node) => {
             const meta = getNodeTypeMeta(node.type);
             const isResourceContainer = isResourceContainerNodeType(node.type);
             const nodeMediaType = getNodeMediaType(node);
@@ -9945,6 +11482,13 @@ function WorkflowPage({
               edges,
               nodeMap,
             );
+            const videoFrameUploadRoles =
+              node.type === 'video'
+                ? getVideoFrameUploadRoles(effectiveVideoInputMode)
+                : [];
+            const hasVideoPromptReferenceRow =
+              inputReferenceThumbnails.length > 0 ||
+              videoFrameUploadRoles.length > 0;
             const showTextPromptPopover =
               node.type === 'script' && isNodeSelected && hasPromptFocus && !isNodeGenerating && !draggingNodeIds.includes(node.id);
             const showImagePromptPopover =
@@ -10061,12 +11605,20 @@ function WorkflowPage({
                     <div
                       className={`${styles.imageUploadTarget} ${styles[`${nodeMediaType}UploadTarget`] || ''} ${node.mediaPreviewUrl ? styles.imageUploadTargetHasImage : ''} ${showVideoPromptPopover || showImagePromptPopover || showAudioPromptPopover ? styles.imageUploadTargetPopoverOpen : ''}`}
                       data-canvas-ignore="true"
+                      data-media-preview={
+                        ['image', 'video'].includes(nodeMediaType) ? 'true' : undefined
+                      }
                       role={isResourceContainer ? 'button' : undefined}
                       tabIndex={-1}
                       aria-label={
                         isResourceContainer
                           ? `${node.title}，双击重新上传素材`
                           : `${node.title}预览`
+                      }
+                      title={
+                        node.mediaPreviewUrl && ['image', 'video'].includes(nodeMediaType)
+                          ? '双击查看详情'
+                          : undefined
                       }
                     >
                       {node.mediaPreviewUrl && nodeMediaType === 'image' ? (
@@ -10088,10 +11640,15 @@ function WorkflowPage({
                         <div className={styles.videoPlayer}>
                           <video
                             src={node.mediaPreviewUrl}
+                            data-disable-native-fullscreen="true"
                             controls
+                            controlsList="noremoteplayback"
+                            disablePictureInPicture
+                            disableRemotePlayback
                             preload="metadata"
                             draggable={false}
                             playsInline
+                            onDoubleClick={preventNativeVideoFullscreen}
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => event.stopPropagation()}
                             onLoadedMetadata={(event) => updateVideoProgress(node.id, event.currentTarget)}
@@ -10184,7 +11741,7 @@ function WorkflowPage({
                                   node,
                                   viewport,
                                   viewportSize,
-                                  inputReferenceThumbnails.length > 0,
+                                  hasVideoPromptReferenceRow,
                                 )
                           }
                           data-canvas-ignore="true"
@@ -10252,6 +11809,10 @@ function WorkflowPage({
                             node,
                             inputReferenceThumbnails,
                             '当前视频输入参考素材',
+                            renderVideoFrameUploadButtons(
+                              node,
+                              effectiveVideoInputMode,
+                            ),
                           )}
                           <textarea
                             data-prompt-editor-node-id={node.id}
@@ -10261,6 +11822,7 @@ function WorkflowPage({
                             aria-label="视频生成描述"
                           />
                           <div className={styles.videoPromptFooter}>
+                            {renderMediaGenerationTypeSelect(node)}
                             <div
                               className={`${styles.videoPromptField} ${styles.videoModelSelect}`}
                               tabIndex={-1}
@@ -10636,6 +12198,7 @@ function WorkflowPage({
                             aria-label="图片生成描述"
                           />
                           <div className={styles.imagePromptFooter}>
+                            {renderMediaGenerationTypeSelect(node)}
                             <div
                               className={`${styles.videoPromptField} ${styles.videoModelSelect}`}
                               tabIndex={-1}
@@ -11346,6 +12909,16 @@ function WorkflowPage({
               onExtract={extractCurrentVideoFrame}
               onVideoStateChange={syncVideoFrameExtractorState}
               onVideoError={handleVideoFrameExtractorError}
+            />,
+            document.body,
+          )
+          : null}
+        {mediaDetailNode?.mediaPreviewUrl
+          ? createPortal(
+            <MediaDetailViewer
+              node={mediaDetailNode}
+              references={mediaDetailReferences}
+              onClose={closeMediaDetailViewer}
             />,
             document.body,
           )
