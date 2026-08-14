@@ -149,6 +149,7 @@ function normalizeMemberPageResponse(response) {
 
 function UserManagementPage({
   teamId,
+  canInviteMembers = false,
   canManagePointsQuota = false,
   mainAvailablePoints = null,
   pointsWalletLoading = false,
@@ -339,7 +340,7 @@ function UserManagementPage({
   async function handleInviteMember(event) {
     event.preventDefault();
 
-    if (!teamId || inviteLoading) {
+    if (!teamId || !canInviteMembers || inviteLoading) {
       return;
     }
 
@@ -569,26 +570,28 @@ function UserManagementPage({
         </div>
 
         <div className={styles.toolbar}>
-          <form className={styles.inviteForm} onSubmit={handleInviteMember}>
-            <div className={styles.inviteInputRow}>
-              <span className={styles.compactTitle}>邀请账号</span>
-              <input
-                type="text"
-                value={inviteUsername}
-                onChange={(event) => setInviteUsername(event.target.value)}
-                placeholder="请输入用户名（如：alex_li）"
-                aria-label="邀请账号输入"
-                disabled={!teamId || inviteLoading}
-              />
-              <button
-                className={styles.primaryButton}
-                type="submit"
-                disabled={!teamId || inviteLoading || !inviteUsername.trim()}
-              >
-                {inviteLoading ? '邀请中...' : '添加成员'}
-              </button>
-            </div>
-          </form>
+          {canInviteMembers ? (
+            <form className={styles.inviteForm} onSubmit={handleInviteMember}>
+              <div className={styles.inviteInputRow}>
+                <span className={styles.compactTitle}>邀请账号</span>
+                <input
+                  type="text"
+                  value={inviteUsername}
+                  onChange={(event) => setInviteUsername(event.target.value)}
+                  placeholder="请输入用户名（如：alex_li）"
+                  aria-label="邀请账号输入"
+                  disabled={!teamId || inviteLoading}
+                />
+                <button
+                  className={styles.primaryButton}
+                  type="submit"
+                  disabled={!teamId || inviteLoading || !inviteUsername.trim()}
+                >
+                  {inviteLoading ? '邀请中...' : '添加成员'}
+                </button>
+              </div>
+            </form>
+          ) : null}
 
           <div className={styles.filterPanel}>
             <div className={styles.filterRow}>

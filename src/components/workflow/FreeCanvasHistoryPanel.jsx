@@ -18,20 +18,6 @@ const MEDIA_LABELS = {
   audio: '音频',
 };
 
-const STATUS_LABELS = {
-  queued: '排队中',
-  pending: '等待中',
-  running: '生成中',
-  processing: '处理中',
-  success: '已完成',
-  succeeded: '已完成',
-  completed: '已完成',
-  failed: '失败',
-  error: '失败',
-  canceled: '已取消',
-  cancelled: '已取消',
-};
-
 const COVER_URL_KEYS = [
   'thumbnail_url',
   'thumbnailUrl',
@@ -240,11 +226,17 @@ function findPagingContainer(payload) {
 }
 
 function resolvePreview(item, mediaType) {
+  const directPreviewUrl = firstText(item.preview_url, item.previewUrl);
+  if (isMediaUrl(directPreviewUrl)) {
+    return {
+      url: directPreviewUrl,
+      kind: mediaType === 'video' ? 'video' : 'image',
+    };
+  }
+
   const directCoverUrl = firstText(
     item.thumbnail_url,
     item.thumbnailUrl,
-    item.preview_url,
-    item.previewUrl,
     item.cover_url,
     item.coverUrl,
     item.image_url,
@@ -331,7 +323,6 @@ function normalizeHistoryItem(rawItem) {
     item.modelDisplayName,
     id ? `记录 ${id.slice(0, 8)}` : '',
   );
-  const status = firstText(item.status, item.run_status, item.runStatus).toLowerCase();
   const preview = resolvePreview(item, mediaType);
 
   return {
@@ -339,8 +330,6 @@ function normalizeHistoryItem(rawItem) {
     title: title || '未命名生成记录',
     mediaType,
     mediaLabel: MEDIA_LABELS[mediaType] || '文本',
-    status,
-    statusLabel: STATUS_LABELS[status] || status,
     modelName: resolveModelName(item),
     createdAt: firstText(
       item.created_at,
@@ -390,11 +379,19 @@ function formatHistoryTime(value) {
   }).format(new Date(timestamp));
 }
 
-function HistoryThumbnail({ item }) {
+function HistoryThumbnail({ item, disabled, onPreview }) {
   const [mediaFailed, setMediaFailed] = useState(false);
+  const canPreview = Boolean(item.previewUrl) && !mediaFailed;
 
   return (
-    <span className={`${styles.thumbnail} ${styles[`thumbnail_${item.mediaType}`] || ''}`}>
+    <button
+      className={`${styles.thumbnail} ${styles[`thumbnail_${item.mediaType}`] || ''}`}
+      type="button"
+      aria-label={item.previewKind === 'video' ? `放大观看视频：${item.title}` : `放大查看图片：${item.title}`}
+      title={canPreview ? (item.previewKind === 'video' ? '放大观看视频' : '放大查看图片') : undefined}
+      onClick={() => onPreview(item)}
+      disabled={disabled || !canPreview}
+    >
       <span className={styles.thumbnailFallback} aria-hidden />
       {item.previewUrl && !mediaFailed && item.previewKind === 'video' ? (
         <video
@@ -420,7 +417,7 @@ function HistoryThumbnail({ item }) {
         />
       ) : null}
       <small>{item.mediaLabel}</small>
-    </span>
+    </button>
   );
 }
 
@@ -430,6 +427,7 @@ export default function FreeCanvasHistoryPanel({
   restoringHistoryId,
   restoreError,
   onClose,
+  onPreview,
   onRestore,
 }) {
   const [mediaFilter, setMediaFilter] = useState('all');
@@ -589,34 +587,35 @@ export default function FreeCanvasHistoryPanel({
             {items.map((item) => {
               const isRestoring = restoringHistoryId === item.id;
               return (
-                <button
+                <div
                   key={item.id}
                   className={`${styles.item} ${isRestoring ? styles.itemRestoring : ''}`}
-                  type="button"
-                  aria-label={`恢复历史记录：${item.title}`}
-                  onClick={() => onRestore(item)}
-                  disabled={Boolean(restoringHistoryId)}
                 >
                   <HistoryThumbnail
                     key={`${item.previewKind}:${item.previewUrl || item.mediaType}`}
                     item={item}
+                    disabled={Boolean(restoringHistoryId)}
+                    onPreview={onPreview}
                   />
-                  <span className={styles.itemContent}>
-                    <strong title={item.title}>{item.title}</strong>
-                    <span className={styles.itemMeta}>
-                      {item.modelName ? <small title={item.modelName}>{item.modelName}</small> : null}
-                      {formatHistoryTime(item.createdAt) ? <time dateTime={item.createdAt}>{formatHistoryTime(item.createdAt)}</time> : null}
+                  <button
+                    className={styles.restoreButton}
+                    type="button"
+                    aria-label={`恢复历史记录：${item.title}`}
+                    onClick={() => onRestore(item)}
+                    disabled={Boolean(restoringHistoryId)}
+                  >
+                    <span className={styles.itemContent}>
+                      <strong title={item.title}>{item.title}</strong>
+                      <span className={styles.itemMeta}>
+                        {item.modelName ? <small title={item.modelName}>{item.modelName}</small> : null}
+                        {formatHistoryTime(item.createdAt) ? <time dateTime={item.createdAt}>{formatHistoryTime(item.createdAt)}</time> : null}
+                      </span>
                     </span>
-                  </span>
-                  <span className={styles.itemAction} aria-hidden>
-                    {isRestoring ? <span className={styles.spinner} /> : <span className={styles.restoreArrow}>↗</span>}
-                  </span>
-                  {item.statusLabel && !['success', 'succeeded', 'completed'].includes(item.status) ? (
-                    <span className={`${styles.status} ${styles[`status_${item.status}`] || ''}`}>
-                      {item.statusLabel}
+                    <span className={styles.itemAction} aria-hidden>
+                      {isRestoring ? <span className={styles.spinner} /> : <span className={styles.restoreArrow}>↗</span>}
                     </span>
-                  ) : null}
-                </button>
+                  </button>
+                </div>
               );
             })}
 

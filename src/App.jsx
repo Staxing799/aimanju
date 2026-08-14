@@ -876,6 +876,7 @@ function App() {
       content = (
         <UserManagementPage
           teamId={currentTeamId}
+          canInviteMembers={isMainAccount}
           canManagePointsQuota={isMainAccount}
           mainAvailablePoints={availablePointsValue}
           pointsWalletLoading={pointsWalletLoading}

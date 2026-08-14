@@ -4632,6 +4632,7 @@ function WorkflowPage({
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
   const [restoringHistoryId, setRestoringHistoryId] = useState('');
   const [historyRestoreError, setHistoryRestoreError] = useState('');
+  const [historyPreviewNode, setHistoryPreviewNode] = useState(null);
   const [isMinimapOpen, setIsMinimapOpen] = useState(false);
   const [editingNodeField, setEditingNodeField] = useState(null);
   const [openMediaGenerationTypeNodeId, setOpenMediaGenerationTypeNodeId] = useState('');
@@ -4719,6 +4720,35 @@ function WorkflowPage({
   const closeHistoryPanel = useCallback(() => {
     setIsHistoryPanelOpen(false);
     setHistoryRestoreError('');
+  }, []);
+
+  const closeHistoryMediaPreview = useCallback(() => {
+    setHistoryPreviewNode(null);
+  }, []);
+
+  const openHistoryMediaPreview = useCallback((historyItem) => {
+    const previewUrl = String(historyItem?.previewUrl || '').trim();
+    const previewType = historyItem?.previewKind === 'video' ? 'video' : 'image';
+    if (!previewUrl || !['image', 'video'].includes(previewType)) {
+      return;
+    }
+
+    setHistoryPreviewNode({
+      id: `history-preview-${historyItem.id}`,
+      type: previewType,
+      title: historyItem.title || (previewType === 'video' ? '历史视频' : '历史图片'),
+      model: historyItem.modelName || '',
+      mediaPreviewUrl: previewUrl,
+      generationMeta: {
+        runId: historyItem.id,
+        generatedAt: historyItem.createdAt || '',
+        model: historyItem.modelName || '',
+        outputs: [{
+          id: historyItem.id,
+          url: previewUrl,
+        }],
+      },
+    });
   }, []);
 
   useEffect(() => {
@@ -11422,6 +11452,7 @@ function WorkflowPage({
           restoringHistoryId={restoringHistoryId}
           restoreError={historyRestoreError}
           onClose={closeHistoryPanel}
+          onPreview={openHistoryMediaPreview}
           onRestore={restoreCanvasHistory}
         />
         {isGraphReady && visibleNodes.length === 0 && groups.length === 0 ? (
@@ -13484,6 +13515,15 @@ function WorkflowPage({
               node={mediaDetailNode}
               references={mediaDetailReferences}
               onClose={closeMediaDetailViewer}
+            />,
+            document.body,
+          )
+          : null}
+        {historyPreviewNode?.mediaPreviewUrl
+          ? createPortal(
+            <MediaDetailViewer
+              node={historyPreviewNode}
+              onClose={closeHistoryMediaPreview}
             />,
             document.body,
           )
