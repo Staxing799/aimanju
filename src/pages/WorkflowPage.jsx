@@ -9381,15 +9381,13 @@ function WorkflowPage({
     if (
       ['image', 'video'].includes(mediaType) &&
       node?.mediaPreviewUrl &&
-      !isMediaPreviewControl &&
-      event.target.closest?.('[data-media-preview="true"]')
+      !isMediaPreviewControl
     ) {
       if (mediaType === 'video') {
         preventNativeVideoFullscreen(event);
-      } else {
-        event.preventDefault();
-        event.stopPropagation();
       }
+      event.preventDefault();
+      event.stopPropagation();
       setMediaDetailNodeId(nodeId);
       return;
     }
@@ -12125,8 +12123,8 @@ function WorkflowPage({
                       role={isResourceContainer ? 'button' : undefined}
                       tabIndex={-1}
                       aria-label={
-                        isResourceContainer
-                          ? `${node.title}，双击重新上传素材`
+                        isResourceContainer && !node.mediaPreviewUrl
+                          ? `${node.title}，双击上传素材`
                           : `${node.title}预览`
                       }
                       title={
@@ -12166,7 +12164,6 @@ function WorkflowPage({
                             tabIndex={-1}
                             aria-label={`${node.title}视频画面，双击查看详情`}
                             onDoubleClick={preventNativeVideoFullscreen}
-                            onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
