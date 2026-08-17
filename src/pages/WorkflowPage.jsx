@@ -11288,8 +11288,16 @@ function WorkflowPage({
     >
       <header className={styles.topbar}>
         <div className={styles.projectIdentity}>
-          <button className={styles.iconButton} type="button" onClick={onBackHome} aria-label="返回创作首页">
-            ←
+          <button
+            className={styles.backButton}
+            type="button"
+            onClick={onBackHome}
+            aria-label="返回自由画布项目列表"
+            title="返回项目列表"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M16 10H4M9 5l-5 5 5 5" />
+            </svg>
           </button>
           <div className={styles.projectIdentityContent}>
             {isProjectNameEditing ? (
@@ -11322,7 +11330,6 @@ function WorkflowPage({
                 {projectDisplayName}
               </button>
             )}
-            <span>可视化编排项目生产链路</span>
           </div>
         </div>
 
