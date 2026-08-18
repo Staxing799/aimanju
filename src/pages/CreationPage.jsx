@@ -4387,16 +4387,19 @@ function CreationPage({
       const status = normalizeTaskStatus(task?.status || task?.task_status || task?.state);
 
       if (isTaskSuccessStatus(status)) {
+        await refreshPointsAfterGeneration();
         return task;
       }
 
       if (isTaskFailedStatus(status)) {
+        await refreshPointsAfterGeneration();
         throw new Error(task?.error_message || task?.message || '任务执行失败');
       }
 
       // Some backends return terminal custom statuses that are neither running nor failed/success.
       // Avoid false timeout when status has already left the in-progress state.
       if (status && !isTaskInProgressStatus(status)) {
+        await refreshPointsAfterGeneration();
         return task;
       }
 
@@ -4430,21 +4433,25 @@ function CreationPage({
           : [];
 
       if (isTaskFailedStatus(projectStatus)) {
+        await refreshPointsAfterGeneration();
         throw new Error(projectErrorMessage || '分镜生成失败');
       }
 
       if (isTaskSuccessStatus(projectStatus)) {
+        await refreshPointsAfterGeneration();
         return storyboards;
       }
 
       // Some backends use custom terminal statuses (e.g. completed/done) on project level.
       if (projectStatus && !isTaskInProgressStatus(projectStatus)) {
+        await refreshPointsAfterGeneration();
         return storyboards;
       }
 
 
       // Fallback for backends that do not expose project-level storyboard status.
       if (!projectStatus && storyboards.length > 0) {
+        await refreshPointsAfterGeneration();
         return storyboards;
       }
 
@@ -4466,10 +4473,12 @@ function CreationPage({
       const hasAsset = Boolean(shot.cover_image_url || shot.cover_image_local_path);
 
       if (isTaskFailedStatus(status)) {
+        await refreshPointsAfterGeneration();
         throw createStoryboardMediaError(shot.cover_error_message || '参考图生成失败', shot);
       }
 
       if (hasAsset || isTaskSuccessStatus(status)) {
+        await refreshPointsAfterGeneration();
         return shot;
       }
 
@@ -4490,10 +4499,12 @@ function CreationPage({
       const status = normalizeTaskStatus(shot.video_status);
 
       if (isTaskFailedStatus(status)) {
+        await refreshPointsAfterGeneration();
         throw createStoryboardMediaError(shot.video_error_message || '视频生成失败', shot);
       }
 
       if (isTaskSuccessStatus(status)) {
+        await refreshPointsAfterGeneration();
         return shot;
       }
 
@@ -4516,10 +4527,12 @@ function CreationPage({
       const analysisStatus = normalizeTaskStatus(projectData.analysis_status);
 
       if (isTaskFailedStatus(analysisStatus)) {
+        await refreshPointsAfterGeneration();
         throw new Error(projectData.analysis_error_message || '剧本解析失败');
       }
 
       if (isTaskSuccessStatus(analysisStatus)) {
+        await refreshPointsAfterGeneration();
         return projectData;
       }
 
@@ -4612,6 +4625,7 @@ function CreationPage({
       );
 
       if (settled) {
+        await refreshPointsAfterGeneration();
         return characters;
       }
 
@@ -4645,9 +4659,11 @@ function CreationPage({
       const status = normalizeTaskStatus(target.avatar_status);
       const hasAsset = Boolean(target.avatar_image_url || target.avatar_local_path);
       if (isTaskFailedStatus(status)) {
+        await refreshPointsAfterGeneration();
         throw new Error(target.avatar_error_message || '角色形象生成失败');
       }
       if (hasAsset || isTaskSuccessStatus(status)) {
+        await refreshPointsAfterGeneration();
         return target;
       }
 
@@ -4687,6 +4703,7 @@ function CreationPage({
       );
 
       if (settled) {
+        await refreshPointsAfterGeneration();
         return scenes;
       }
 
@@ -4720,9 +4737,11 @@ function CreationPage({
       const status = normalizeTaskStatus(target.image_status);
       const hasAsset = Boolean(target.image_url || target.image_local_path);
       if (isTaskFailedStatus(status)) {
+        await refreshPointsAfterGeneration();
         throw new Error(target.image_error_message || '场景图生成失败');
       }
       if (hasAsset || isTaskSuccessStatus(status)) {
+        await refreshPointsAfterGeneration();
         return target;
       }
 
@@ -5098,6 +5117,7 @@ function CreationPage({
       completedTask?.status || completedTask?.task_status || completedTask?.state,
     );
     if (isTaskFailedStatus(finalStatus)) {
+      await refreshPointsAfterGeneration();
       throw new Error(completedTask?.error_message || completedTask?.message || fallbackMessage);
     }
     return completedTask;

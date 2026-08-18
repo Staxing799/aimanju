@@ -10,6 +10,7 @@ import WorkflowPage from './pages/WorkflowPage';
 import AssetLibraryPage from './pages/AssetLibraryPage';
 import UserManagementPage from './pages/UserManagementPage';
 import ProjectManagementPage from './pages/ProjectManagementPage';
+import PointsRecordsPage from './pages/PointsRecordsPage';
 import { MENU_ITEMS } from './constants/models';
 import { useStudioState } from './hooks/useStudioState';
 import { parseApiErrorMessage } from './utils/projectAdapter';
@@ -35,6 +36,7 @@ const MENU_ROUTE_MAP = {
   assets: '/assets',
   users: '/users',
   projects: '/projects',
+  points: '/points',
 };
 
 function createDefaultConfirmDialogState() {
@@ -286,6 +288,10 @@ function resolveActiveMenu(pathname) {
     return 'projects';
   }
 
+  if (pathname.startsWith('/points')) {
+    return 'points';
+  }
+
   return 'creation';
 }
 
@@ -307,6 +313,7 @@ function App() {
   const [teamConfirmLoading, setTeamConfirmLoading] = useState(false);
   const [pointsWallet, setPointsWallet] = useState(null);
   const [pointsWalletLoading, setPointsWalletLoading] = useState(false);
+  const [pointsRecordsVersion, setPointsRecordsVersion] = useState(0);
   const [remoteProjects, setRemoteProjects] = useState([]);
   const [projectListPage, setProjectListPage] = useState(1);
   const [projectListPageSize, setProjectListPageSize] = useState(PROJECT_LIST_PAGE_SIZE);
@@ -499,6 +506,8 @@ function App() {
   );
 
   async function refreshPointsWallet() {
+    setPointsRecordsVersion((current) => current + 1);
+
     if (!localStorage.getItem(TOKEN_STORAGE_KEY)) {
       setPointsWallet(null);
       setPointsWalletLoading(false);
@@ -921,6 +930,18 @@ function App() {
           }
         />
       );
+    } else if (routeType === 'points') {
+      content = (
+        <PointsRecordsPage
+          teamId={currentTeamId}
+          isMainAccount={isMainAccount}
+          availablePoints={availablePointsValue}
+          walletLoading={pointsWalletLoading}
+          refreshVersion={pointsRecordsVersion}
+          onRefreshWallet={refreshPointsWallet}
+          onNotify={showMessage}
+        />
+      );
     } else {
       const isCreationRoute = routeType === 'creation';
       content = (
@@ -1056,6 +1077,7 @@ function App() {
         <Route path="/assets" element={renderWorkspacePage('assets')} />
         <Route path="/users" element={renderWorkspacePage('users')} />
         <Route path="/projects" element={renderWorkspacePage('projects')} />
+        <Route path="/points" element={renderWorkspacePage('points')} />
         <Route path="*" element={<Navigate to={defaultRoute} replace />} />
       </Routes>
 

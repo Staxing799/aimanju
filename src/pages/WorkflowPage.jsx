@@ -8437,6 +8437,7 @@ function WorkflowPage({
       const result = await freeCanvasApi.syncNodeRun(projectId, nodeRunId);
       const status = getNodeRunStatus(result);
       if (isNodeRunFailureStatus(status)) {
+        await refreshPointsAfterGeneration();
         updateNode(nodeId, {
           status: 'failed',
           generationStatus: status || 'failed',
@@ -8448,6 +8449,7 @@ function WorkflowPage({
       }
 
       if (isNodeRunSuccessStatus(status)) {
+        await refreshPointsAfterGeneration();
         setNodes((current) =>
           current.map((node) => {
             if (node.id !== nodeId) {
@@ -8628,6 +8630,7 @@ function WorkflowPage({
         scopedNodeIds,
       );
       if (isFailureGenerationStatus(workflowStatus) || isSuccessGenerationStatus(workflowStatus)) {
+        await refreshPointsAfterGeneration();
         finishWorkflowRunSync(groupId);
         return;
       }

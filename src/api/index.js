@@ -231,7 +231,22 @@ export const userApi = {
 
 export const pointsApi = {
   getWallet: () => request.get(`${API_PREFIX}/points/wallet`),
-  getRecords: (params = {}) => request.get(`${API_PREFIX}/points/records`, { params }),
+  getRecords: ({
+    page = 1,
+    pageSize = 20,
+    userId,
+    changeType,
+    featureCode,
+  } = {}) =>
+    request.get(`${API_PREFIX}/points/records`, {
+      params: {
+        page,
+        pageSize,
+        userId,
+        changeType,
+        featureCode,
+      },
+    }),
   quote: (data, config = {}) => request.post(`${API_PREFIX}/points/quote`, data, config),
 };
 

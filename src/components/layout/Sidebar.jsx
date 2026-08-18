@@ -6,6 +6,7 @@ const MENU_CODE_MAP = {
   assets: 'AS',
   users: 'UR',
   projects: 'PM',
+  points: 'PT',
 };
 
 // 左侧导航菜单：负责一级功能切换。

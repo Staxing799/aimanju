@@ -109,4 +109,5 @@ export const MENU_ITEMS = [
   { id: 'assets', label: '素材库', hint: '素材与版本' },
   { id: 'users', label: '用户管理', hint: '角色权限' },
   { id: 'projects', label: '项目管理', hint: '进度与状态' },
+  { id: 'points', label: '积分流水', hint: '消费与退款记录' },
 ];
