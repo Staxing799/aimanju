@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import aiveoLogo from '../../assets/aiveo-logo.png';
 import infiniteCanvasHero from '../../assets/home-infinite-canvas-hero.png';
 import lightWaterfall from '../../assets/home-light-waterfall-v6.png';
@@ -11,7 +12,51 @@ const CREATIVE_STAGES = [
   { id: 'film', index: '04', label: '动态成片', tone: 'coral' },
 ];
 
+const HERO_GALLERY_SLOTS = [
+  { id: 'visual-01', x: 8.5, y: 34, width: 230, mobileWidth: 96, ratio: '16 / 10', accent: '#9674ff' },
+  { id: 'visual-02', x: 22, y: 68, width: 188, mobileWidth: 86, ratio: '4 / 3', accent: '#5d8dff' },
+  { id: 'visual-03', x: 36, y: 28, width: 218, mobileWidth: 94, ratio: '16 / 10', accent: '#61d8ff' },
+  { id: 'visual-04', x: 50, y: 64, width: 248, mobileWidth: 104, ratio: '16 / 10', accent: '#a56fff' },
+  { id: 'visual-05', x: 64, y: 27, width: 196, mobileWidth: 88, ratio: '4 / 3', accent: '#62c5ff' },
+  { id: 'visual-06', x: 78, y: 68, width: 228, mobileWidth: 98, ratio: '16 / 10', accent: '#7a80ff' },
+  { id: 'visual-07', x: 91.5, y: 36, width: 190, mobileWidth: 86, ratio: '4 / 3', accent: '#b16dff' },
+];
+
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function createHeroGalleryFrames() {
+  return HERO_GALLERY_SLOTS.map((slot, index) => {
+    const finalRotation = randomBetween(-5.2, 5.2);
+    const delay = randomBetween(60, 620);
+    const duration = randomBetween(1080, 1480);
+    const floatHorizontalDirection = Math.random() < 0.5 ? -1 : 1;
+    const floatVerticalDirection = Math.random() < 0.5 ? -1 : 1;
+
+    return {
+      ...slot,
+      index: index + 1,
+      x: Math.min(93, Math.max(7, slot.x + randomBetween(-1.35, 1.35))),
+      y: Math.min(78, Math.max(21, slot.y + randomBetween(-4.5, 4.5))),
+      finalRotation,
+      startRotation: finalRotation + randomBetween(-11, 11),
+      startX: randomBetween(-90, 90),
+      delay,
+      duration,
+      floatX: randomBetween(2.4, 5.8) * floatHorizontalDirection,
+      floatY: randomBetween(1.8, 4.5) * floatVerticalDirection,
+      floatRotation: randomBetween(0.28, 0.82) * floatHorizontalDirection,
+      floatDuration: randomBetween(4200, 6800),
+      floatDelay: delay + duration,
+      layer: Math.round(randomBetween(1, 5)),
+    };
+  });
+}
+
 function HomeLandingPage({ onEnterCanvas }) {
+  const [galleryFrames] = useState(createHeroGalleryFrames);
+
   return (
     <div className={styles.page}>
       <main>
@@ -24,6 +69,47 @@ function HomeLandingPage({ onEnterCanvas }) {
           />
           <div className={styles.heroShade} aria-hidden />
           <div className={styles.heroGrid} aria-hidden />
+
+          <div className={styles.heroGallery} role="group" aria-label="图片展示位">
+            {galleryFrames.map((frame) => (
+              <figure
+                key={frame.id}
+                className={styles.galleryFrame}
+                aria-label={`图片展示位 ${frame.index}，等待添加图片`}
+                style={{
+                  '--frame-x': `${frame.x}%`,
+                  '--frame-y': `${frame.y}%`,
+                  '--frame-width': `${frame.width}px`,
+                  '--frame-mobile-width': `${frame.mobileWidth}px`,
+                  '--frame-ratio': frame.ratio,
+                  '--frame-accent': frame.accent,
+                  '--frame-rotation': `${frame.finalRotation}deg`,
+                  '--frame-start-rotation': `${frame.startRotation}deg`,
+                  '--frame-start-x': `${frame.startX}px`,
+                  '--frame-delay': `${frame.delay}ms`,
+                  '--frame-duration': `${frame.duration}ms`,
+                  '--frame-float-x': `${frame.floatX}px`,
+                  '--frame-float-y': `${frame.floatY}px`,
+                  '--frame-float-rotation': `${frame.floatRotation}deg`,
+                  '--frame-float-duration': `${frame.floatDuration}ms`,
+                  '--frame-float-delay': `${frame.floatDelay}ms`,
+                  '--frame-layer': frame.layer,
+                }}
+              >
+                <div className={styles.galleryFrameSurface}>
+                  <figcaption className={styles.galleryFrameBar}>
+                    <span><i /> VISUAL {String(frame.index).padStart(2, '0')}</span>
+                    <small>EMPTY</small>
+                  </figcaption>
+                  <div className={styles.galleryPlaceholder} aria-hidden>
+                    <span className={styles.galleryReticle}>+</span>
+                    <small>IMAGE SLOT</small>
+                    <div className={styles.galleryCorners}><i /><i /><i /><i /></div>
+                  </div>
+                </div>
+              </figure>
+            ))}
+          </div>
 
           <h1 id="home-hero-title" className={styles.visuallyHidden}>AiVeo 无限画布</h1>
           <div className={styles.portalLight} aria-hidden>
