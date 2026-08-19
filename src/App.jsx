@@ -873,7 +873,7 @@ function App() {
   }
 
   function renderWorkspacePage(routeType) {
-    if (!token) {
+    if (!token && !import.meta.env.DEV) {
       return <Navigate to="/login" replace />;
     }
 
@@ -974,7 +974,7 @@ function App() {
           teamName={currentTeamName}
           availablePoints={availablePointsText}
           onLogout={logout}
-          hideNavigation={routeType === 'creation'}
+          hideNavigation={routeType === 'creation' || routeType === 'home'}
         >
           {content}
         </AppShell>
