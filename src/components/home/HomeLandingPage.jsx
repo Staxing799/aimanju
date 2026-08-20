@@ -594,13 +594,7 @@ function HomeLandingPage({ onEnterCanvas }) {
           </button>
         </section>
 
-        <section className={styles.showcaseSection} aria-labelledby="showcase-title">
-          <div className={styles.sectionIntro}>
-            <p>Featured / 近期作品与活动</p>
-            <h2 id="showcase-title">让好故事，先被看见</h2>
-            <span>精选创作、平台活动与灵感专题会在这里持续更新。</span>
-          </div>
-
+        <section className={styles.showcaseSection} aria-label="AIYO 精选作品">
           <article ref={showcaseCardRef} className={styles.showcaseCard}>
             <img
               src={showcaseArtwork}
